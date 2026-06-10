@@ -1,0 +1,14 @@
+# Fichiers temporaires Python
+__pycache__/
+*.py[cod]
+
+# Environnements virtuels
+venv/
+env/
+.env
+
+# Fichiers de configuration VS Code locaux
+.vscode/
+
+# Paquets d'extension compilés
+*.vsix

@@ -1,0 +1,54 @@
+{
+  "name": "spyder-plots",
+  "displayName": "Spyder Plots",
+  "description": "Panneau de graphes matplotlib façon Spyder : plt.show() envoie les figures dans un panneau VS Code scrollable, avec enregistrer / tout enregistrer / supprimer / tout supprimer.",
+  "version": "0.1.0",
+  "publisher": "hugo",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Data Science",
+    "Visualization"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "spyderPlots.open",
+        "title": "Spyder Plots : ouvrir le panneau"
+      },
+      {
+        "command": "spyderPlots.deleteAll",
+        "title": "Spyder Plots : supprimer tous les graphes"
+      },
+      {
+        "command": "spyderPlots.saveAll",
+        "title": "Spyder Plots : tout enregistrer"
+      }
+    ],
+    "configuration": {
+      "title": "Spyder Plots",
+      "properties": {
+        "spyderPlots.port": {
+          "type": "number",
+          "default": 53210,
+          "description": "Port local d'écoute pour recevoir les figures (incrémenté automatiquement s'il est occupé)."
+        },
+        "spyderPlots.dpi": {
+          "type": "number",
+          "default": 144,
+          "description": "Résolution (dpi) du rendu PNG des figures."
+        },
+        "spyderPlots.autoReveal": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ouvrir/afficher automatiquement le panneau quand une figure arrive."
+        }
+      }
+    }
+  }
+}
