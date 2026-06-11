@@ -344,7 +344,7 @@ def _convert_quadmesh(mesh, axis_suffix):
 # Detection des artistes non supportes (-> fallback SVG)
 # ------------------------------------------------------------
 def _has_unsupported_artist(ax, bar_rectangles):
-    from matplotlib.collections import LineCollection, PolyCollection
+    from matplotlib.collections import Collection
     from matplotlib.patches import Patch
     from matplotlib.spines import Spine
 
@@ -360,8 +360,11 @@ def _has_unsupported_artist(ax, bar_rectangles):
             if child is ax.patch:
                 continue
             return True
-        if isinstance(child, (LineCollection, PolyCollection)):
-            return True  # errorbar/fill_between : non geres -> SVG
+        # Toute autre Collection (LineCollection/PolyCollection de fill_between
+        # et errorbar, ContourSet de contour/contourf, EventCollection...)
+        # n'est pas convertie -> fallback SVG.
+        if isinstance(child, Collection):
+            return True
         if isinstance(child, Patch):
             return True
         # Text, Spine, Axis, Legend... : ignorables
@@ -406,6 +409,11 @@ def convert_figure(fig):
                     bar_rectangles.add(p)
 
         if _has_unsupported_artist(ax, bar_rectangles):
+            return None
+
+        # text()/annotate() utilisateur ne sont pas convertis en Plotly :
+        # pour ne pas les perdre silencieusement, on retombe sur le SVG.
+        if len(ax.texts) > 0:
             return None
 
         # ---- traces ----
@@ -504,9 +512,32 @@ def convert_figure(fig):
 
         if ax.get_legend() is not None:
             layout["showlegend"] = True
+            # Legende lisible : cadre, fond semi-transparent, police plus grande.
+            layout["legend"] = {
+                "font": {"size": 13},
+                "bgcolor": "rgba(255,255,255,0.88)",
+                "bordercolor": "rgba(80,80,80,0.55)",
+                "borderwidth": 1,
+                "xanchor": "right",
+                "x": 0.99,
+                "yanchor": "top",
+                "y": 0.99,
+            }
+
+    # filet de securite : aucune trace produite (artiste exotique passe
+    # entre les mailles) -> on retombe sur le SVG plutot qu'un graphe vide.
+    if len(data) == 0:
+        return None
 
     # hauteur d'affichage derivee de la taille de la figure
     size = fig.get_size_inches()
     layout["height"] = int(size[1] * 96)
 
-    return {"data": data, "layout": layout}
+    # dimensions (pouces) transmises pour un redimensionnement qui conserve
+    # le ratio cote panneau (notamment en plein ecran).
+    return {
+        "data": data,
+        "layout": layout,
+        "width_in": float(size[0]),
+        "height_in": float(size[1]),
+    }

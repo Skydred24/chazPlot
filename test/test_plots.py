@@ -6,6 +6,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
 
 # ---- Figure 1 : relation aire-Mach (clin d'oeil) ----
 gamma = 1.4
@@ -45,4 +46,26 @@ plt.title("Champ 2D — pcolormesh")
 fig3.canvas.manager.set_window_title("champ_2d")
 plt.show()
 
-print("3 figures envoyees au panneau Graphes.")
+# ---- Figure 4 : animation (onde qui se propage) ----
+fig4, ax4 = plt.subplots(figsize=(7, 4))
+xa = np.linspace(0.0, 4.0 * np.pi, 400)
+(line_a,) = ax4.plot(xa, np.sin(xa), color="teal")
+env_up, = ax4.plot(xa, np.exp(-xa / 10.0), color="gray", linewidth=0.8, linestyle="--")
+env_dn, = ax4.plot(xa, -np.exp(-xa / 10.0), color="gray", linewidth=0.8, linestyle="--")
+ax4.set_ylim(-1.2, 1.2)
+ax4.set_xlabel("x")
+ax4.set_ylabel("amplitude")
+ax4.set_title("Onde amortie qui se propage")
+ax4.grid(True, alpha=0.3)
+
+def _update(frame):
+    phase = frame * 0.25
+    line_a.set_ydata(np.sin(xa - phase) * np.exp(-xa / 10.0))
+    return (line_a,)
+
+# garder une reference a l'objet animation (sinon il peut etre collecte)
+anim = FuncAnimation(fig4, _update, frames=60, interval=40)
+fig4.canvas.manager.set_window_title("onde_animee")
+plt.show()
+
+print("3 figures + 1 animation envoyees au panneau Graphes.")

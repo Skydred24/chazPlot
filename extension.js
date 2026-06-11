@@ -61,8 +61,9 @@ function startServer(port, attempt) {
           const hasPlotly = data.plotly && typeof data.plotly === "object";
           const hasSvg = typeof data.svg === "string" && data.svg.length > 0;
           const hasPng = typeof data.png === "string" && data.png.length > 0;
-          if (!hasPlotly && !hasSvg && !hasPng) {
-            throw new Error("plotly/svg/png manquant");
+          const hasFrames = Array.isArray(data.frames) && data.frames.length > 0;
+          if (!hasPlotly && !hasSvg && !hasPng && !hasFrames) {
+            throw new Error("plotly/svg/png/frames manquant");
           }
           addFigure(data);
           res.writeHead(200, { "Content-Type": "text/plain" });
@@ -109,7 +110,9 @@ function injectEnvironment(port) {
   env.clear();
   env.replace("MPLBACKEND", "module://vscode_spyder_plots_backend");
   env.replace("VSCODE_PLOTS_PORT", String(port));
-  env.replace("VSCODE_PLOTS_DPI", String(cfg.get("dpi", 144)));
+  env.replace("VSCODE_PLOTS_DPI", String(cfg.get("dpi", 200)));
+  env.replace("VSCODE_PLOTS_ANIM_DPI", String(cfg.get("animationDpi", 130)));
+  env.replace("VSCODE_PLOTS_ANIM_MAX_FRAMES", String(cfg.get("animationMaxFrames", 600)));
   env.prepend("PYTHONPATH", pyDir + path.delimiter);
 }
 
@@ -117,11 +120,14 @@ function injectEnvironment(port) {
 // Gestion des figures
 // ------------------------------------------------------------
 function addFigure(data) {
+  const hasFrames = Array.isArray(data.frames) && data.frames.length > 0;
   const fig = {
     id: nextId,
     plotly: data.plotly && typeof data.plotly === "object" ? data.plotly : null,
     svg: typeof data.svg === "string" && data.svg.length > 0 ? data.svg : null,
     png: typeof data.png === "string" && data.png.length > 0 ? data.png : null,
+    frames: hasFrames ? data.frames : null,
+    interval: hasFrames ? Number(data.interval) || 100 : null,
     title: data.title ? String(data.title) : "Figure " + String(nextId),
     ts: new Date().toLocaleTimeString()
   };
@@ -152,9 +158,17 @@ function defaultName(fig, ext) {
   return base + "." + ext;
 }
 
-function writeFigure(fig, filePath) {
+function writeFigure(fig, filePath, frameIndex) {
   // le format est deduit de l'extension du chemin choisi
   const wantSvg = filePath.toLowerCase().endsWith(".svg");
+  // Animation : on enregistre la frame demandee (ou la premiere) en PNG.
+  if (fig.frames) {
+    let idx = typeof frameIndex === "number" ? frameIndex : 0;
+    if (idx < 0 || idx >= fig.frames.length) { idx = 0; }
+    const outPath = wantSvg ? filePath.replace(/\.svg$/i, ".png") : filePath;
+    fs.writeFileSync(outPath, Buffer.from(fig.frames[idx], "base64"));
+    return true;
+  }
   if (wantSvg && fig.svg !== null) {
     fs.writeFileSync(filePath, Buffer.from(fig.svg, "base64"));
     return true;
@@ -175,18 +189,18 @@ function writeFigure(fig, filePath) {
   return false;
 }
 
-function saveOne(id) {
+function saveOne(id, frameIndex) {
   const fig = figures.find(function (f) { return f.id === id; });
   if (!fig) { return; }
   const cfg = vscode.workspace.getConfiguration("spyderPlots");
-  const ext = cfg.get("saveFormat", "png");
+  const ext = fig.frames ? "png" : cfg.get("saveFormat", "png");
   vscode.window.showSaveDialog({
     defaultUri: vscode.Uri.file(path.join(workspaceDir(), defaultName(fig, ext))),
     filters: { "Image PNG": ["png"], "Image SVG (vectoriel)": ["svg"] }
   }).then(function (uri) {
     if (!uri) { return; }
     try {
-      writeFigure(fig, uri.fsPath);
+      writeFigure(fig, uri.fsPath, frameIndex);
       vscode.window.showInformationMessage("Figure enregistrée : " + uri.fsPath);
     } catch (err) {
       vscode.window.showErrorMessage("Spyder Plots : échec de l'enregistrement (" + String(err) + ")");
@@ -245,7 +259,7 @@ function setupPanel(p) {
   p.webview.html = webviewHtml(p.webview);
 
   p.webview.onDidReceiveMessage(function (msg) {
-    if (msg.type === "save") { saveOne(msg.id); }
+    if (msg.type === "save") { saveOne(msg.id, msg.frameIndex); }
     else if (msg.type === "saveAll") { saveAll(); }
     else if (msg.type === "delete") { deleteOne(msg.id); }
     else if (msg.type === "deleteAll") { deleteAll(); }
@@ -294,6 +308,20 @@ function webviewHtml(webview) {
   const plotlyUri = webview.asWebviewUri(
     vscode.Uri.file(path.join(extContext.extensionPath, "media", "plotly.min.js"))
   );
+  const htmlPath = path.join(extContext.extensionPath, "media", "panel.html");
+  let template = null;
+  try {
+    template = fs.readFileSync(htmlPath, "utf8");
+  } catch (e) {
+    template = null;
+  }
+  if (template !== null) {
+    return template
+      .replace(/{{nonce}}/g, nonce)
+      .replace(/{{cspSource}}/g, webview.cspSource)
+      .replace(/{{plotlyUri}}/g, String(plotlyUri));
+  }
+  // Fallback : ancien HTML inline si le fichier media/panel.html est absent.
   return [
     "<!DOCTYPE html>",
     "<html lang='fr'>",

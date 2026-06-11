@@ -1,8 +1,8 @@
 {
   "name": "spyder-plots",
   "displayName": "Spyder Plots",
-  "description": "Panneau de graphes matplotlib façon Spyder : plt.show() envoie les figures dans un panneau VS Code scrollable, avec enregistrer / tout enregistrer / supprimer / tout supprimer.",
-  "version": "0.2.0",
+  "description": "Panneau de graphes matplotlib façon Spyder : plt.show() envoie les figures (et les animations) dans un panneau VS Code scrollable, avec lecteur d'animation, mode agrandir, enregistrer / tout enregistrer / supprimer / tout supprimer.",
+  "version": "0.3.0",
   "publisher": "hugo",
   "engines": {
     "vscode": "^1.75.0"
@@ -42,6 +42,17 @@
           "type": "number",
           "default": 200,
           "description": "Résolution (dpi) du rendu PNG des figures (utilisé pour l'enregistrement et le fallback d'affichage)."
+        },
+        "spyderPlots.animationDpi": {
+          "type": "number",
+          "default": 130,
+          "description": "Résolution (dpi) de chaque frame d'animation. Plus bas = animations plus légères et fluides ; plus haut = frames plus nettes mais plus lourdes."
+        },
+        "spyderPlots.animationMaxFrames": {
+          "type": "number",
+          "default": 600,
+          "minimum": 0,
+          "description": "Nombre maximal de frames capturées par animation (garde-fou mémoire : chaque frame est un PNG conservé en mémoire). Mettez 0 pour ne pas limiter — attention aux animations très longues (charge réseau et RAM)."
         },
         "spyderPlots.saveFormat": {
           "type": "string",

@@ -23,10 +23,17 @@ sans bloquer le script.
 spyder-plots/
 ├── package.json                      manifeste de l'extension
 ├── extension.js                      serveur HTTP local + panneau webview
+├── media/
+│   ├── panel.html                    interface du panneau (UI + lecteur)
+│   └── plotly.min.js                 Plotly.js embarque
 ├── python/
-│   └── vscode_spyder_plots_backend.py   backend matplotlib (module://)
+│   ├── vscode_spyder_plots_backend.py   backend matplotlib (module://)
+│   └── _mpl_to_plotly.py             conversion figure -> Plotly
 └── test/
-    └── test_plots.py                 script de validation (3 figures)
+    ├── test_plots.py                 demo (figures + 1 animation)
+    ├── test_stress.py                banc de torture (25 cas limites)
+    ├── test_capture.py               test capture de frames d'animation
+    └── test_show.py                  test de routage show()
 ```
 
 Fonctionnement : au demarrage, l'extension ouvre un serveur HTTP sur
@@ -35,7 +42,7 @@ terminaux :
 
 - `MPLBACKEND=module://vscode_spyder_plots_backend`
 - `PYTHONPATH` += dossier `python/` de l'extension
-- `VSCODE_PLOTS_PORT`, `VSCODE_PLOTS_DPI`
+- `VSCODE_PLOTS_PORT`, `VSCODE_PLOTS_DPI`, `VSCODE_PLOTS_ANIM_DPI`
 
 A chaque `plt.show()`, le backend rend les figures en PNG (Agg, hors ecran),
 les envoie en POST a l'extension, puis les ferme — exactement le comportement
@@ -74,14 +81,38 @@ Si vous avez Node.js : `npx @vscode/vsce package` dans le dossier, puis
 ## Reglages (settings.json)
 
 - `spyderPlots.port` (defaut 53210)
-- `spyderPlots.dpi` (defaut 144) — augmentez pour des PNG plus fins
+- `spyderPlots.dpi` (defaut 200) — augmentez pour des PNG plus fins
+- `spyderPlots.animationDpi` (defaut 130) — resolution de chaque frame
+  d'animation (plus bas = plus leger/fluide ; plus haut = plus net)
+- `spyderPlots.animationMaxFrames` (defaut 600) — plafond de frames par
+  animation (garde-fou memoire) ; **0 = illimite**
+- `spyderPlots.saveFormat` (defaut png) — format propose par defaut
 - `spyderPlots.autoReveal` (defaut true) — afficher le panneau a chaque figure
 
 ## Limites connues
 
-- Les figures sont des images statiques (comme Spyder en mode inline) :
-  pas de zoom/pan interactif matplotlib. Le toggle "Ajuster a la largeur"
-  permet de voir la taille native.
+Conversion Plotly (revelees par `test/test_stress.py`) :
+
+- **Artistes non geres -> rendu SVG** (toujours net, mais non interactif) :
+  fill_between, errorbar, contour/contourf, quiver/streamplot, axes
+  polaires, 3D, pie, et toute figure contenant des `text()`/`annotate()`
+  utilisateur (pour ne pas perdre l'annotation).
+- **boxplot** : les boites etant des `Line2D` par defaut, le graphe est
+  converti en de multiples traces de lignes (lisible mais brouillon).
+  Pour un vrai rendu, utilisez `plt.boxplot(..., patch_artist=True)` ou
+  forcez le SVG.
+- **Legende** : le style est ameliore (cadre, fond, police), mais la
+  *position* exacte de matplotlib (`loc`, `bbox_to_anchor`) n'est pas
+  reproduite — la legende est placee en haut a droite.
+- **twinx (double axe Y)** : les deux axes sont traces mais se
+  superposent ; le second axe Y n'a pas d'echelle distincte propre.
+- **Dates** : un axe temporel matplotlib peut apparaitre en nombres
+  (datenum) cote Plotly.
+- Au-dela de ~500 000 points, ou si le SVG depasse 8 Mo, repli automatique
+  vers le PNG.
+
+Autres :
+
 - Les terminaux deja ouverts avant l'activation ne sont pas affectes :
   ouvrez-en un nouveau.
 - Si vous lancez Python **hors** de VS Code, le backend n'est pas actif
@@ -113,3 +144,63 @@ pour Enregistrer / Tout enregistrer.
 
 Installation : pensez a copier le nouveau dossier `media/` avec le reste
 (`%USERPROFILE%\.vscode\extensions\hugo.spyder-plots-0.2.0`).
+
+## v0.3 — Animations + refonte visuelle
+
+### Animations matplotlib (FuncAnimation / ArtistAnimation)
+
+Les animations sont detectees automatiquement : a `plt.show()` (ou
+`anim.save()`), toutes les frames sont capturees et envoyees au panneau,
+qui affiche un **vrai lecteur d'animation** :
+
+- boutons **premiere frame, frame precedente, lecture/pause, frame
+  suivante, derniere frame** ;
+- **barre de navigation (scrubber)** pour sauter directement a une frame ;
+- compteur `frame / total` et selecteur de **vitesse** (0.25× a 4×) ;
+- badge `ANIM · Nf` sur la carte ;
+- **Enregistrer** sauvegarde la frame actuellement affichee en PNG.
+
+Cote Python, un writer (`AbstractMovieWriter`) capture chaque frame sans
+ecrire de fichier video. Par defaut le nombre de frames est plafonne a
+600 (garde-fou memoire), **reglable via `spyderPlots.animationMaxFrames`
+— 0 pour illimite** ; la resolution est reglable via
+`spyderPlots.animationDpi`.
+
+Conservez votre code matplotlib habituel :
+
+```python
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+# ... fig, update ...
+anim = FuncAnimation(fig, update, frames=60, interval=40)
+plt.show()   # le lecteur apparait dans le panneau Graphes
+```
+
+> Gardez une reference a l'objet `anim` (comme avec matplotlib classique),
+> sinon le ramasse-miettes peut le supprimer avant la capture.
+
+### Refonte visuelle
+
+- Cartes redessinees (coins arrondis, ombre legere, en-tete clair) et
+  barre d'outils plus lisible, entierement basees sur le theme VS Code.
+- Bouton **Agrandir** sur chaque graphe : ouvre un overlay plein panneau
+  qui **re-rend en vectoriel** (Plotly responsive / SVG), donc net a toute
+  taille — fini le flou en grand. Les animations s'y rejouent en grand.
+- **Legende** retravaillee (cadre, fond semi-transparent, police plus
+  grande) pour rester lisible par-dessus les courbes.
+- **Coordonnees au survol deportees** : plus d'info-bulle flottante sur le
+  graphe ; les coordonnees `x / y (/ z)` s'affichent discretement dans
+  l'en-tete de la carte (et dans la barre de l'overlay agrandi).
+- Hauteur des graphes Plotly proportionnelle a la largeur (donc plus
+  haute en plein ecran), recalculee au redimensionnement.
+
+### Tester les limites
+
+`python test/test_stress.py` envoie 25 figures volontairement tordues
+(legendes surchargees, twinx, dates, contour, 3D, pie, scatter 120k,
+animations a titre/legende dynamiques...). Chaque titre est prefixe par
+le rendu attendu (`[PLOTLY?]`, `[SVG]`, `[ANIM]`, `[LIMITE]`) pour reperer
+d'un coup d'oeil les ecarts. Voir « Limites connues » plus bas.
+
+L'interface du panneau est desormais dans `media/panel.html` (plus simple
+a personnaliser). Pensez a copier ce fichier lors de l'installation.
