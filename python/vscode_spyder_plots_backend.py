@@ -1,17 +1,13 @@
 # ============================================================
-# vscode_spyder_plots_backend.py
-# Backend matplotlib pour l'extension VS Code "Spyder Plots".
+# vscode_spyder_plots_backend.py — v2 (rendu vectoriel)
 #
-# Principe (identique a Spyder) :
-#   - le rendu est fait hors ecran avec Agg ;
-#   - plt.show() serialise chaque figure ouverte en PNG (base64)
-#     et l'envoie en HTTP au serveur local de l'extension ;
-#   - les figures sont ensuite fermees (comme dans Spyder),
-#     et le script continue sans bloquer.
-#
-# Active automatiquement par l'extension via les variables
-# d'environnement MPLBACKEND, PYTHONPATH, VSCODE_PLOTS_PORT.
-# Aucune dependance hors bibliotheque standard + matplotlib.
+# Changement par rapport a la v1 :
+#   chaque figure est envoyee en DEUX formats :
+#     - "svg" : vectoriel, utilise pour l'AFFICHAGE dans le panneau
+#               -> net a n'importe quelle taille, comme Spyder/VS Code
+#     - "png" : haute resolution, utilise pour l'ENREGISTREMENT
+#   Si le SVG est trop lourd (figures a tres nombreux points),
+#   il est abandonne et le panneau affiche le PNG a la place.
 # ============================================================
 
 import base64
@@ -19,7 +15,6 @@ import io
 import json
 import os
 import sys
-import struct
 import urllib.request
 import urllib.error
 
@@ -28,6 +23,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib._pylab_helpers import Gcf
 
 _WARNED = False
+_SVG_MAX_BYTES = 8 * 1024 * 1024  # au-dela : fallback PNG pour l'affichage
 
 
 def _port():
@@ -36,18 +32,14 @@ def _port():
 
 def _dpi():
     try:
-        return float(os.environ.get("VSCODE_PLOTS_DPI", "144"))
+        return float(os.environ.get("VSCODE_PLOTS_DPI", "200"))
     except ValueError:
-        return 144.0
+        return 200.0
 
 
-def _send_figure(png_bytes, title):
-    """Envoie une figure (PNG) au serveur local de l'extension."""
+def _send_figure(payload):
+    """Envoie une figure au serveur local de l'extension."""
     global _WARNED
-    payload = {
-        "png": base64.b64encode(png_bytes).decode("ascii"),
-        "title": title,
-    }
     url = "http://127.0.0.1:" + _port() + "/figure"
     request = urllib.request.Request(
         url,
@@ -56,7 +48,7 @@ def _send_figure(png_bytes, title):
         method="POST",
     )
     try:
-        urllib.request.urlopen(request, timeout=3.0)
+        urllib.request.urlopen(request, timeout=5.0)
         return True
     except (urllib.error.URLError, OSError):
         if not _WARNED:
@@ -70,7 +62,6 @@ def _send_figure(png_bytes, title):
 
 
 def _figure_title(manager):
-    """Titre de la fenetre si defini, sinon 'Figure N'."""
     title = None
     try:
         title = manager.get_window_title()
@@ -81,6 +72,26 @@ def _figure_title(manager):
     return title
 
 
+def _render(figure, file_format, dpi):
+    """Rend la figure dans le format demande, retourne les octets (ou None)."""
+    buffer = io.BytesIO()
+    try:
+        figure.savefig(
+            buffer,
+            format=file_format,
+            dpi=dpi,
+            bbox_inches="tight",
+            facecolor=figure.get_facecolor(),
+            edgecolor="none",
+        )
+    except Exception as error:
+        sys.stderr.write(
+            "[spyder-plots] Echec du rendu " + file_format + " : " + str(error) + "\n"
+        )
+        return None
+    return buffer.getvalue()
+
+
 @_Backend.export
 class _BackendVSCodeSpyderPlots(_Backend):
     FigureCanvas = FigureCanvasAgg
@@ -88,28 +99,43 @@ class _BackendVSCodeSpyderPlots(_Backend):
 
     @classmethod
     def show(cls, block=None):
-        """Appele par plt.show() : envoie toutes les figures ouvertes,
-        puis les ferme (comportement Spyder). Ne bloque jamais."""
+        """Appele par plt.show() : envoie toutes les figures ouvertes
+        (SVG pour l'affichage + PNG pour la sauvegarde), puis les ferme.
+        Ne bloque jamais."""
         managers = Gcf.get_all_fig_managers()
         if len(managers) == 0:
             return
 
         for manager in managers:
             figure = manager.canvas.figure
-            buffer = io.BytesIO()
+
+            # 1) tentative de conversion en graphe interactif Plotly
+            plotly_spec = None
             try:
-                figure.savefig(
-                    buffer,
-                    format="png",
-                    dpi=_dpi(),
-                    bbox_inches="tight",
-                    facecolor=figure.get_facecolor(),
-                    edgecolor="none",
-                )
-            except Exception as error:
-                sys.stderr.write("[spyder-plots] Echec du rendu d'une figure : " + str(error) + "\n")
+                from _mpl_to_plotly import convert_figure
+                plotly_spec = convert_figure(figure)
+            except Exception:
+                plotly_spec = None
+
+            # 2) rendus image : PNG toujours (sauvegarde), SVG en
+            #    fallback d'affichage si la conversion a echoue
+            png_bytes = _render(figure, "png", _dpi())
+            svg_bytes = None
+            if plotly_spec is None:
+                svg_bytes = _render(figure, "svg", _dpi())
+                if svg_bytes is not None and len(svg_bytes) > _SVG_MAX_BYTES:
+                    svg_bytes = None
+
+            if plotly_spec is None and svg_bytes is None and png_bytes is None:
                 continue
-            _send_figure(buffer.getvalue(), _figure_title(manager))
+
+            payload = {
+                "title": _figure_title(manager),
+                "plotly": plotly_spec,
+                "svg": base64.b64encode(svg_bytes).decode("ascii") if svg_bytes is not None else None,
+                "png": base64.b64encode(png_bytes).decode("ascii") if png_bytes is not None else None,
+            }
+            _send_figure(payload)
 
         # Comme Spyder : les figures sont consommees par show().
         Gcf.destroy_all()

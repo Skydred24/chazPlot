@@ -2,7 +2,7 @@
   "name": "spyder-plots",
   "displayName": "Spyder Plots",
   "description": "Panneau de graphes matplotlib façon Spyder : plt.show() envoie les figures dans un panneau VS Code scrollable, avec enregistrer / tout enregistrer / supprimer / tout supprimer.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "hugo",
   "engines": {
     "vscode": "^1.75.0"
@@ -40,8 +40,14 @@
         },
         "spyderPlots.dpi": {
           "type": "number",
-          "default": 144,
-          "description": "Résolution (dpi) du rendu PNG des figures."
+          "default": 200,
+          "description": "Résolution (dpi) du rendu PNG des figures (utilisé pour l'enregistrement et le fallback d'affichage)."
+        },
+        "spyderPlots.saveFormat": {
+          "type": "string",
+          "enum": ["png", "svg"],
+          "default": "png",
+          "description": "Format proposé par défaut pour Enregistrer / Tout enregistrer."
         },
         "spyderPlots.autoReveal": {
           "type": "boolean",

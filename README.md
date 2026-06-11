@@ -88,3 +88,28 @@ Si vous avez Node.js : `npx @vscode/vsce package` dans le dossier, puis
   (MPLBACKEND n'est pas defini) : comportement matplotlib normal.
 - Pour forcer le backend classique dans un terminal VS Code :
   `set MPLBACKEND=TkAgg` (cmd) ou `$env:MPLBACKEND="TkAgg"` (PowerShell).
+
+## v0.2 — Graphes interactifs (vrai graphe)
+
+Les figures sont desormais converties en **graphes Plotly interactifs**
+directement dans le panneau : zoom (molette ou rectangle), pan, valeurs
+au survol, double-clic pour reinitialiser, autoscale, export PNG via la
+barre d'outils du graphe. L'interactivite persiste apres la fin du script.
+
+Pipeline : a chaque plt.show(), le backend tente de convertir la figure
+matplotlib en specification Plotly (`python/_mpl_to_plotly.py`). Plotly.js
+est embarque dans l'extension (`media/plotly.min.js`) : aucun acces
+reseau, aucune dependance Python supplementaire.
+
+Artistes convertis : plot/courbes (styles, marqueurs, legendes),
+scatter (couleurs, tailles, colormaps), bar/barh (y compris etiquettes
+categorielles), imshow, pcolormesh, sous-graphes, echelles log,
+limites d'axes, grilles, titres.
+
+Fallback automatique en SVG (toujours net) si la figure contient un
+artiste non convertible : fill_between, errorbar, contour, patches
+libres, 3D... Le PNG haute resolution reste genere dans tous les cas
+pour Enregistrer / Tout enregistrer.
+
+Installation : pensez a copier le nouveau dossier `media/` avec le reste
+(`%USERPROFILE%\.vscode\extensions\hugo.spyder-plots-0.2.0`).

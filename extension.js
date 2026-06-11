@@ -26,10 +26,9 @@ function activate(context) {
   const cfg = vscode.workspace.getConfiguration("spyderPlots");
   startServer(cfg.get("port", 53210), 0);
 
-  // --- Le secret pour survivre au détachement de la fenêtre ---
+  // --- Sérialiseur pour survivre au détachement de la fenêtre ---
   vscode.window.registerWebviewPanelSerializer("spyderPlots", {
     async deserializeWebviewPanel(webviewPanel, state) {
-      // VS Code nous confie le nouveau panneau recréé dans la fenêtre flottante
       panel = webviewPanel;
       setupPanel(panel);
     }
@@ -59,8 +58,11 @@ function startServer(port, attempt) {
       req.on("end", function () {
         try {
           const data = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-          if (typeof data.png !== "string" || data.png.length === 0) {
-            throw new Error("png manquant");
+          const hasPlotly = data.plotly && typeof data.plotly === "object";
+          const hasSvg = typeof data.svg === "string" && data.svg.length > 0;
+          const hasPng = typeof data.png === "string" && data.png.length > 0;
+          if (!hasPlotly && !hasSvg && !hasPng) {
+            throw new Error("plotly/svg/png manquant");
           }
           addFigure(data);
           res.writeHead(200, { "Content-Type": "text/plain" });
@@ -117,7 +119,9 @@ function injectEnvironment(port) {
 function addFigure(data) {
   const fig = {
     id: nextId,
-    png: data.png,
+    plotly: data.plotly && typeof data.plotly === "object" ? data.plotly : null,
+    svg: typeof data.svg === "string" && data.svg.length > 0 ? data.svg : null,
+    png: typeof data.png === "string" && data.png.length > 0 ? data.png : null,
     title: data.title ? String(data.title) : "Figure " + String(nextId),
     ts: new Date().toLocaleTimeString()
   };
@@ -142,26 +146,51 @@ function deleteAll() {
 // ------------------------------------------------------------
 // Enregistrement
 // ------------------------------------------------------------
-function defaultName(fig) {
+function defaultName(fig, ext) {
   const clean = fig.title.replace(/[^a-zA-Z0-9_\-]+/g, "_").slice(0, 40);
-  return clean.length > 0 ? clean + ".png" : "figure_" + String(fig.id) + ".png";
+  const base = clean.length > 0 ? clean : "figure_" + String(fig.id);
+  return base + "." + ext;
+}
+
+function writeFigure(fig, filePath) {
+  // le format est deduit de l'extension du chemin choisi
+  const wantSvg = filePath.toLowerCase().endsWith(".svg");
+  if (wantSvg && fig.svg !== null) {
+    fs.writeFileSync(filePath, Buffer.from(fig.svg, "base64"));
+    return true;
+  }
+  if (!wantSvg && fig.png !== null) {
+    fs.writeFileSync(filePath, Buffer.from(fig.png, "base64"));
+    return true;
+  }
+  // format demande indisponible : on ecrit ce qu'on a, avec la bonne extension
+  if (fig.png !== null) {
+    fs.writeFileSync(filePath.replace(/\.svg$/i, ".png"), Buffer.from(fig.png, "base64"));
+    return true;
+  }
+  if (fig.svg !== null) {
+    fs.writeFileSync(filePath.replace(/\.png$/i, ".svg"), Buffer.from(fig.svg, "base64"));
+    return true;
+  }
+  return false;
 }
 
 function saveOne(id) {
   const fig = figures.find(function (f) { return f.id === id; });
   if (!fig) { return; }
+  const cfg = vscode.workspace.getConfiguration("spyderPlots");
+  const ext = cfg.get("saveFormat", "png");
   vscode.window.showSaveDialog({
-    defaultUri: vscode.Uri.file(path.join(workspaceDir(), defaultName(fig))),
-    filters: { "Image PNG": ["png"] }
+    defaultUri: vscode.Uri.file(path.join(workspaceDir(), defaultName(fig, ext))),
+    filters: { "Image PNG": ["png"], "Image SVG (vectoriel)": ["svg"] }
   }).then(function (uri) {
     if (!uri) { return; }
-    fs.writeFile(uri.fsPath, Buffer.from(fig.png, "base64"), function (err) {
-      if (err) {
-        vscode.window.showErrorMessage("Spyder Plots : échec de l'enregistrement (" + String(err) + ")");
-      } else {
-        vscode.window.showInformationMessage("Figure enregistrée : " + uri.fsPath);
-      }
-    });
+    try {
+      writeFigure(fig, uri.fsPath);
+      vscode.window.showInformationMessage("Figure enregistrée : " + uri.fsPath);
+    } catch (err) {
+      vscode.window.showErrorMessage("Spyder Plots : échec de l'enregistrement (" + String(err) + ")");
+    }
   });
 }
 
@@ -178,13 +207,16 @@ function saveAll() {
   }).then(function (uris) {
     if (!uris || uris.length === 0) { return; }
     const dir = uris[0].fsPath;
+    const cfg = vscode.workspace.getConfiguration("spyderPlots");
+    const ext = cfg.get("saveFormat", "png");
     let count = 0;
     for (let i = 0; i < figures.length; i = i + 1) {
       const fig = figures[i];
-      const name = String(i + 1).padStart(2, "0") + "_" + defaultName(fig);
+      const name = String(i + 1).padStart(2, "0") + "_" + defaultName(fig, ext);
       try {
-        fs.writeFileSync(path.join(dir, name), Buffer.from(fig.png, "base64"));
-        count = count + 1;
+        if (writeFigure(fig, path.join(dir, name))) {
+          count = count + 1;
+        }
       } catch (e) {
         // on continue avec les suivantes
       }
@@ -205,8 +237,12 @@ function workspaceDir() {
 // Panneau webview
 // ------------------------------------------------------------
 function setupPanel(p) {
-  p.webview.options = { enableScripts: true, retainContextWhenHidden: true };
-  p.webview.html = webviewHtml();
+  p.webview.options = {
+    enableScripts: true,
+    retainContextWhenHidden: true,
+    localResourceRoots: [vscode.Uri.file(path.join(extContext.extensionPath, "media"))]
+  };
+  p.webview.html = webviewHtml(p.webview);
 
   p.webview.onDidReceiveMessage(function (msg) {
     if (msg.type === "save") { saveOne(msg.id); }
@@ -217,7 +253,7 @@ function setupPanel(p) {
   });
 
   p.onDidDispose(function () {
-    // Ne nullifier que si c'est bien le panneau actif (évite les conflits au détachement)
+    // Évite le conflit de destruction lors du détachement
     if (panel === p) { panel = null; }
   });
 }
@@ -225,17 +261,20 @@ function setupPanel(p) {
 function ensurePanel(reveal) {
   if (panel) {
     if (reveal) {
-      // 'undefined' ordonne à VS Code de laisser la fenêtre là où elle est (ex: détachée)
+      // 'undefined' permet au panneau de rester détaché sur un autre écran
       panel.reveal(undefined, true);
     }
     return;
   }
-  
   panel = vscode.window.createWebviewPanel(
     "spyderPlots",
     "Graphes",
     { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
-    { enableScripts: true, retainContextWhenHidden: true }
+    {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+      localResourceRoots: [vscode.Uri.file(path.join(extContext.extensionPath, "media"))]
+    }
   );
   
   setupPanel(panel);
@@ -250,14 +289,18 @@ function postToWebview(message) {
 // ------------------------------------------------------------
 // HTML du webview — interface façon volet Graphes de Spyder
 // ------------------------------------------------------------
-function webviewHtml() {
+function webviewHtml(webview) {
   const nonce = String(Date.now()) + String(Math.floor(Math.random() * 100000));
+  const plotlyUri = webview.asWebviewUri(
+    vscode.Uri.file(path.join(extContext.extensionPath, "media", "plotly.min.js"))
+  );
   return [
     "<!DOCTYPE html>",
     "<html lang='fr'>",
     "<head>",
     "<meta charset='UTF-8'>",
-    "<meta http-equiv='Content-Security-Policy' content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'nonce-" + nonce + "';\">",
+    "<meta http-equiv='Content-Security-Policy' content=\"default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'nonce-" + nonce + "' " + webview.cspSource + ";\">",
+    "<script src='" + String(plotlyUri) + "'></script>",
     "<style>",
     "  :root{ color-scheme: light dark; }",
     "  body{ margin:0; font-family: var(--vscode-font-family); color: var(--vscode-foreground); background: var(--vscode-editor-background); }",
@@ -280,7 +323,9 @@ function webviewHtml() {
     "  .card-head .spacer{ flex:1; }",
     "  .imgwrap{ background:#ffffff; text-align:center; padding:8px; }",
     "  .imgwrap img{ max-width:100%; height:auto; display:inline-block; }",
+    "  .imgwrap img.vector{ width:100%; }",
     "  body.no-fit .imgwrap img{ max-width:none; }",
+    "  body.no-fit .imgwrap img.vector{ width:auto; }",
     "  body.no-fit .imgwrap{ overflow-x:auto; }",
     "  .empty{ padding:60px 20px; text-align:center; opacity:.6; font-size:13px; }",
     "</style>",
@@ -331,18 +376,43 @@ function webviewHtml() {
     "    head.appendChild(btnSave); head.appendChild(btnDel);",
     "    const wrap = document.createElement('div');",
     "    wrap.className = 'imgwrap';",
-    "    const img = document.createElement('img');",
-    "    img.src = 'data:image/png;base64,' + fig.png;",
-    "    img.alt = fig.title;",
-    "    wrap.appendChild(img);",
+    "    if (fig.plotly){",
+    "      const plotDiv = document.createElement('div');",
+    "      plotDiv.id = 'plot-' + fig.id;",
+    "      wrap.appendChild(plotDiv);",
+    "    } else {",
+    "      const img = document.createElement('img');",
+    "      if (fig.svg){",
+    "        img.src = 'data:image/svg+xml;base64,' + fig.svg;",
+    "        img.classList.add('vector');",
+    "      } else {",
+    "        img.src = 'data:image/png;base64,' + fig.png;",
+    "      }",
+    "      img.alt = fig.title;",
+    "      wrap.appendChild(img);",
+    "    }",
     "    card.appendChild(head); card.appendChild(wrap);",
     "    return card;",
+    "  }",
+    "",
+    "  function renderPlotly(fig){",
+    "    if (!fig.plotly){ return; }",
+    "    const el = document.getElementById('plot-' + fig.id);",
+    "    if (!el || typeof Plotly === 'undefined'){ return; }",
+    "    Plotly.newPlot(el, fig.plotly.data, fig.plotly.layout, {",
+    "      responsive: true,",
+    "      displaylogo: false,",
+    "      scrollZoom: false,", // <-- Désactivation du zoom à la molette ici
+    "      modeBarButtonsToRemove: ['select2d', 'lasso2d'],",
+    "      toImageButtonOptions: { format: 'png', scale: 2, filename: fig.title }",
+    "    });",
     "  }",
     "",
     "  window.addEventListener('message', function(event){",
     "    const msg = event.data;",
     "    if (msg.type === 'add'){",
     "      list.appendChild(makeCard(msg.fig));",
+    "      renderPlotly(msg.fig);",
     "      n = n + 1; refreshCount();",
     "      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });",
     "    } else if (msg.type === 'remove'){",
@@ -353,6 +423,7 @@ function webviewHtml() {
     "      n = 0;",
     "      for (let i = 0; i < msg.figs.length; i = i + 1){",
     "        list.appendChild(makeCard(msg.figs[i]));",
+    "        renderPlotly(msg.figs[i]);",
     "        n = n + 1;",
     "      }",
     "      refreshCount();",
@@ -365,7 +436,7 @@ function webviewHtml() {
     "    document.body.classList.toggle('no-fit', !e.target.checked);",
     "  });",
     "  refreshCount();",
-    "  vscodeApi.postMessage({ type: 'ready' });",
+    "  vscodeApi.postMessage({ type: 'ready' });", // <-- Signal de réveil ajouté ici
     "</script>",
     "</body>",
     "</html>"
