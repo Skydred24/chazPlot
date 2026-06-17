@@ -124,6 +124,7 @@ function addFigure(data) {
   const fig = {
     id: nextId,
     plotly: data.plotly && typeof data.plotly === "object" ? data.plotly : null,
+    pgf: typeof data.pgf === "string" && data.pgf.length > 0 ? data.pgf : null,
     svg: typeof data.svg === "string" && data.svg.length > 0 ? data.svg : null,
     png: typeof data.png === "string" && data.png.length > 0 ? data.png : null,
     frames: hasFrames ? data.frames : null,
@@ -208,6 +209,46 @@ function saveOne(id, frameIndex) {
   });
 }
 
+function pgfText(fig) {
+  if (!fig || fig.pgf === null) { return null; }
+  return Buffer.from(fig.pgf, "base64").toString("utf8");
+}
+
+function copyPgf(id) {
+  const fig = figures.find(function (f) { return f.id === id; });
+  const text = pgfText(fig);
+  if (text === null) {
+    vscode.window.showWarningMessage("Spyder Plots : aucun code PGF/TikZ disponible pour cette figure.");
+    return;
+  }
+  vscode.env.clipboard.writeText(text).then(function () {
+    vscode.window.showInformationMessage("Code PGF/TikZ copie dans le presse-papiers.");
+  }, function (err) {
+    vscode.window.showErrorMessage("Spyder Plots : impossible de copier le PGF/TikZ (" + String(err) + ")");
+  });
+}
+
+function savePgf(id) {
+  const fig = figures.find(function (f) { return f.id === id; });
+  const text = pgfText(fig);
+  if (text === null) {
+    vscode.window.showWarningMessage("Spyder Plots : aucun code PGF/TikZ disponible pour cette figure.");
+    return;
+  }
+  vscode.window.showSaveDialog({
+    defaultUri: vscode.Uri.file(path.join(workspaceDir(), defaultName(fig, "pgf"))),
+    filters: { "Code LaTeX PGF/TikZ": ["pgf", "tex"] }
+  }).then(function (uri) {
+    if (!uri) { return; }
+    try {
+      fs.writeFileSync(uri.fsPath, text, "utf8");
+      vscode.window.showInformationMessage("Code PGF/TikZ enregistre : " + uri.fsPath);
+    } catch (err) {
+      vscode.window.showErrorMessage("Spyder Plots : echec de l'enregistrement PGF/TikZ (" + String(err) + ")");
+    }
+  });
+}
+
 function saveAll() {
   if (figures.length === 0) {
     vscode.window.showInformationMessage("Spyder Plots : aucune figure à enregistrer.");
@@ -260,6 +301,8 @@ function setupPanel(p) {
 
   p.webview.onDidReceiveMessage(function (msg) {
     if (msg.type === "save") { saveOne(msg.id, msg.frameIndex); }
+    else if (msg.type === "copyPgf") { copyPgf(msg.id); }
+    else if (msg.type === "savePgf") { savePgf(msg.id); }
     else if (msg.type === "saveAll") { saveAll(); }
     else if (msg.type === "delete") { deleteOne(msg.id); }
     else if (msg.type === "deleteAll") { deleteAll(); }

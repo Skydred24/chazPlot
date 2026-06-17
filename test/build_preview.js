@@ -56,9 +56,16 @@ const bootstrap = `
         if (msg.type === "ready"){
           const figs = [
             { id: 1, title: "Animation de demonstration", ts: "12:00:00",
-              frames: makeFrames(24), interval: 80, plotly: null, svg: null, png: null },
+              frames: makeFrames(24), interval: 80, plotly: null, pgf: null, svg: null, png: null },
             { id: 2, title: "Figure Plotly (statique)", ts: "12:00:05",
-              plotly: { data: [], layout: { height: 384 }, width_in: 7, height_in: 4 },
+              plotly: { data: [{ type: "scatter", mode: "lines", x: [0, 1, 2], y: [0, 1, 4], name: "A" }],
+                layout: { height: 384 }, width_in: 7, height_in: 4 },
+              pgf: btoa("\\\\begin{pgfpicture}\\n\\\\end{pgfpicture}\\n"),
+              svg: null, png: null, frames: null },
+            { id: 3, title: "Figure Plotly B", ts: "12:00:09",
+              plotly: { data: [{ type: "scatter", mode: "lines", x: [0, 1, 2], y: [0, 1.5, 2], name: "B" }],
+                layout: { height: 384 }, width_in: 7, height_in: 4 },
+              pgf: btoa("\\\\begin{pgfpicture}\\n\\\\end{pgfpicture}\\n"),
               svg: null, png: null, frames: null }
           ];
           setTimeout(function(){ window.postMessage({ type: "reset", figs: figs }, "*"); }, 0);

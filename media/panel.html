@@ -32,6 +32,7 @@
   .toolbar .brand .dot{ width:9px; height:9px; border-radius:50%;
     background: var(--vscode-charts-blue, #3794ff); box-shadow:0 0 0 3px rgba(55,148,255,.25); }
   .toolbar .count{ font-size:12px; opacity:.7; }
+  .toolbar .compare-status{ font-size:12px; opacity:.78; white-space:nowrap; }
   .toolbar .spacer{ flex:1; }
   label.fit{ font-size:12px; display:flex; align-items:center; gap:6px; opacity:.85; user-select:none; cursor:pointer; }
 
@@ -48,6 +49,7 @@
   button.primary{ background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
   button.primary:hover{ background: var(--vscode-button-hoverBackground); }
   button:disabled{ opacity:.4; cursor:default; }
+  button.compact{ padding:4px 9px; }
 
   /* boutons icones */
   .iconbtn{
@@ -58,6 +60,10 @@
   }
   .iconbtn:hover{ background: var(--vscode-toolbar-hoverBackground, rgba(127,127,127,.18)); opacity:1; }
   .iconbtn svg{ width:15px; height:15px; fill: currentColor; }
+  .textbtn{
+    min-width:34px; height:28px; padding:0 8px; border-radius:6px;
+    font-weight:700; letter-spacing:.3px;
+  }
 
   /* ----- Liste de cartes ----- */
   #list{ padding:16px; display:flex; flex-direction:column; gap: var(--sp-gap); }
@@ -73,17 +79,20 @@
     padding:7px 10px 7px 12px;
     border-bottom:1px solid var(--vscode-panel-border, #3c3c3c);
   }
+  .compare-check{ margin:0 2px 0 0; accent-color: var(--vscode-charts-blue, #3794ff); cursor:pointer; }
   .card-head .title{ font-size:12.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .card-head .ts{ font-size:11px; opacity:.55; }
   .coords{
     font-family: var(--vscode-editor-font-family, monospace);
-    font-size:11px; opacity:.6; white-space:nowrap;
-    padding:1px 7px; margin-right:2px; border-radius:4px;
-    color: var(--vscode-descriptionForeground, #9aa0a6);
-    background: var(--vscode-badge-background, rgba(127,127,127,.12));
+    font-size:11px; opacity:1; white-space:nowrap;
+    padding:2px 8px; margin-right:2px; border-radius:5px;
+    color:#f4f1e8;
+    background: rgba(15, 23, 42, .78);
+    border:1px solid rgba(255,255,255,.16);
+    box-shadow: 0 1px 2px rgba(0,0,0,.22);
     min-width:0;
   }
-  .coords:empty{ background:transparent; }
+  .coords:empty{ background:transparent; border-color:transparent; box-shadow:none; }
   .card-head .badge{
     font-size:10px; font-weight:700; letter-spacing:.4px;
     padding:2px 6px; border-radius:999px;
@@ -153,6 +162,41 @@
     background: var(--sp-plot-bg); padding:16px; }
   .overlay .ov-img img{ max-width:100%; max-height:100%; object-fit:contain; }
   .overlay .player{ width:100%; height:100%; display:flex; flex-direction:column; }
+
+  /* ----- Comparaison ----- */
+  .compare-body{ flex:1; min-height:0; display:flex; background: var(--sp-plot-bg); }
+  .compare-grid{
+    flex:1; min-width:0; min-height:0;
+    display:grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap:1px; background: var(--vscode-panel-border, #3c3c3c);
+  }
+  .compare-pane{ min-width:0; min-height:0; display:flex; flex-direction:column; background: var(--sp-plot-bg); }
+  .compare-pane-title{
+    flex:0 0 auto; padding:7px 10px;
+    color:#f4f1e8; background: rgba(15, 23, 42, .9);
+    font-size:12px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .compare-slot{
+    flex:1; min-height:0; min-width:0;
+    display:flex; align-items:center; justify-content:center;
+    overflow:auto; padding:12px; background: var(--sp-plot-bg);
+  }
+  .compare-slot img{ max-width:100%; max-height:100%; object-fit:contain; }
+  .compare-slot .compare-plot{ width:100%; height:100%; min-height:320px; }
+  .compare-slot .player{ width:100%; height:100%; display:flex; flex-direction:column; }
+  .compare-stack{
+    position:relative; flex:1; min-height:0; min-width:0;
+    background: var(--sp-plot-bg); overflow:hidden;
+  }
+  .compare-layer{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    padding:18px; overflow:auto; background: transparent;
+  }
+  .compare-layer img{ max-width:100%; max-height:100%; object-fit:contain; }
+  .compare-layer.secondary{ opacity:.55; mix-blend-mode:multiply; pointer-events:none; }
+  .compare-stack .compare-plot{ width:100%; height:100%; }
+  .opacity-control{ display:none; align-items:center; gap:8px; font-size:12px; opacity:.9; }
+  .opacity-control input{ width:150px; accent-color: var(--vscode-charts-blue, #3794ff); }
 </style>
 </head>
 <body class="fit">
@@ -160,6 +204,9 @@
     <span class="brand"><span class="dot"></span>Graphes</span>
     <span class="count" id="count">0 graphe</span>
     <span class="spacer"></span>
+    <span class="compare-status" id="compareStatus">0/2 selectionnes</span>
+    <button class="compact" id="compareSide" disabled>Cote a cote</button>
+    <button class="compact" id="compareStack" disabled>Superposer</button>
     <label class="fit"><input type="checkbox" id="fitToggle" checked> Ajuster à la largeur</label>
     <button class="primary" id="saveAll">Tout enregistrer</button>
     <button id="deleteAll">Tout supprimer</button>
@@ -182,6 +229,20 @@
     <div class="obody" id="ovBody"></div>
   </div>
 
+  <!-- Overlay comparaison -->
+  <div class="overlay" id="compareOverlay">
+    <div class="obar">
+      <span class="otitle" id="compareTitle"></span>
+      <span class="spacer"></span>
+      <label class="opacity-control" id="compareOpacityWrap">
+        Opacite B
+        <input type="range" id="compareOpacity" min="0" max="100" value="55">
+      </label>
+      <button id="compareClose">Fermer x</button>
+    </div>
+    <div class="compare-body" id="compareBody"></div>
+  </div>
+
 <script nonce="{{nonce}}">
 (function(){
   "use strict";
@@ -189,6 +250,14 @@
   const list = document.getElementById("list");
   const empty = document.getElementById("empty");
   const count = document.getElementById("count");
+  const compareStatus = document.getElementById("compareStatus");
+  const compareSide = document.getElementById("compareSide");
+  const compareStack = document.getElementById("compareStack");
+  const compareOverlay = document.getElementById("compareOverlay");
+  const compareBody = document.getElementById("compareBody");
+  const compareTitle = document.getElementById("compareTitle");
+  const compareOpacityWrap = document.getElementById("compareOpacityWrap");
+  const compareOpacity = document.getElementById("compareOpacity");
   const overlay = document.getElementById("overlay");
   const ovBody = document.getElementById("ovBody");
   const ovTitle = document.getElementById("ovTitle");
@@ -206,11 +275,49 @@
   };
 
   const figStore = {};   // id -> fig
+  const compareChecks = {}; // id -> checkbox
+  const selectedForCompare = [];
+  let comparePlayers = [];
   let n = 0;
 
   function refreshCount(){
     count.textContent = n + (n > 1 ? " graphes" : " graphe");
     empty.style.display = (n === 0) ? "block" : "none";
+  }
+
+  function syncCompareChecks(){
+    Object.keys(compareChecks).forEach(function(key){
+      const id = parseInt(key, 10);
+      compareChecks[key].checked = selectedForCompare.indexOf(id) !== -1;
+    });
+  }
+
+  function updateCompareToolbar(){
+    compareStatus.textContent = selectedForCompare.length + "/2 selectionnes";
+    const ready = selectedForCompare.length === 2;
+    compareSide.disabled = !ready;
+    compareStack.disabled = !ready;
+  }
+
+  function setCompareSelection(id, checked){
+    const idx = selectedForCompare.indexOf(id);
+    if (checked && idx === -1){
+      if (selectedForCompare.length >= 2){
+        selectedForCompare.shift();
+      }
+      selectedForCompare.push(id);
+    } else if (!checked && idx !== -1){
+      selectedForCompare.splice(idx, 1);
+    }
+    syncCompareChecks();
+    updateCompareToolbar();
+  }
+
+  function removeCompareSelection(id){
+    const idx = selectedForCompare.indexOf(id);
+    if (idx !== -1){ selectedForCompare.splice(idx, 1); }
+    delete compareChecks[id];
+    updateCompareToolbar();
   }
 
   function iconBtn(name, title){
@@ -382,6 +489,7 @@
         if (!document.body.contains(p.el)){ listPlots.splice(i, 1); continue; }
         try { Plotly.relayout(p.el, { height: listPlotHeight(p.el, p.fig) }); } catch (e) {}
       }
+      if (compareOverlay.classList.contains("show")){ resizeComparePlots(); }
     }, 120);
   });
 
@@ -396,6 +504,16 @@
 
     const head = document.createElement("div");
     head.className = "card-head";
+    const compareCheck = document.createElement("input");
+    compareCheck.type = "checkbox";
+    compareCheck.className = "compare-check";
+    compareCheck.title = "Selectionner pour comparer";
+    compareCheck.addEventListener("change", function(){
+      setCompareSelection(fig.id, compareCheck.checked);
+    });
+    compareChecks[fig.id] = compareCheck;
+    head.appendChild(compareCheck);
+
     const title = document.createElement("span");
     title.className = "title";
     title.textContent = fig.title;
@@ -422,6 +540,21 @@
 
     const bExpand = iconBtn("expand", "Agrandir");
     bExpand.addEventListener("click", function(){ openOverlay(fig.id); });
+    const bPgf = document.createElement("button");
+    bPgf.className = "textbtn";
+    bPgf.textContent = "LaTeX";
+    bPgf.disabled = !fig.pgf;
+    bPgf.title = fig.pgf
+      ? "Copier le code LaTeX PGF/TikZ - clic droit pour enregistrer"
+      : "Export LaTeX indisponible pour cette figure";
+    bPgf.addEventListener("click", function(){
+      if (fig.pgf){ vscodeApi.postMessage({ type: "copyPgf", id: fig.id }); }
+    });
+    bPgf.addEventListener("contextmenu", function(e){
+      e.preventDefault();
+      if (fig.pgf){ vscodeApi.postMessage({ type: "savePgf", id: fig.id }); }
+    });
+    head.appendChild(bPgf);
     const bSave = iconBtn("save", "Enregistrer");
     bSave.addEventListener("click", function(){
       const player = card._player;
@@ -469,6 +602,203 @@
       renderPlotly(document.getElementById("plot-" + fig.id), fig, false,
                    document.getElementById("coords-" + fig.id));
     }
+  }
+
+  // ----------------------------------------------------------
+  // Comparaison de deux figures
+  // ----------------------------------------------------------
+  function clone(value){
+    return JSON.parse(JSON.stringify(value || {}));
+  }
+
+  function figureImageSrc(fig){
+    if (fig.frames && fig.frames.length > 0){
+      return "data:image/png;base64," + fig.frames[0];
+    }
+    if (fig.svg){
+      return "data:image/svg+xml;base64," + fig.svg;
+    }
+    if (fig.png){
+      return "data:image/png;base64," + fig.png;
+    }
+    return null;
+  }
+
+  function appendFigureContent(slot, fig, pendingPlots){
+    if (fig.frames){
+      const player = createPlayer(fig, true);
+      comparePlayers.push(player);
+      slot.appendChild(player.root);
+      return;
+    }
+    if (fig.plotly){
+      const plot = document.createElement("div");
+      plot.className = "compare-plot";
+      slot.appendChild(plot);
+      pendingPlots.push(function(){ renderPlotly(plot, fig, true, null); });
+      return;
+    }
+    const src = figureImageSrc(fig);
+    if (src){
+      const img = document.createElement("img");
+      img.src = src;
+      img.alt = fig.title;
+      slot.appendChild(img);
+    }
+  }
+
+  function makeComparePane(fig, pendingPlots){
+    const pane = document.createElement("section");
+    pane.className = "compare-pane";
+    const title = document.createElement("div");
+    title.className = "compare-pane-title";
+    title.textContent = fig.title;
+    const slot = document.createElement("div");
+    slot.className = "compare-slot";
+    pane.append(title, slot);
+    appendFigureContent(slot, fig, pendingPlots);
+    return pane;
+  }
+
+  function canMergePlotly(fig){
+    const data = fig.plotly && Array.isArray(fig.plotly.data) ? fig.plotly.data : [];
+    if (data.length === 0){ return false; }
+    return data.every(function(trace){
+      const type = trace.type || "scatter";
+      const axesOk = (!trace.xaxis || trace.xaxis === "x") && (!trace.yaxis || trace.yaxis === "y");
+      return axesOk && (type === "scatter" || type === "bar");
+    });
+  }
+
+  function overlayTrace(trace, label, secondary){
+    const out = clone(trace);
+    out.xaxis = "x";
+    out.yaxis = "y";
+    out.showlegend = true;
+    out.name = label + (out.name ? " - " + out.name : "");
+    if (secondary){
+      out.opacity = Math.min(typeof out.opacity === "number" ? out.opacity : 1, 0.72);
+      if (out.line){
+        out.line = Object.assign({}, out.line, { dash: out.line.dash || "dash" });
+      }
+      if (out.marker){
+        out.marker = Object.assign({}, out.marker, { opacity: 0.72 });
+      }
+    }
+    return out;
+  }
+
+  function mergedPlotlyFigure(figA, figB){
+    const layout = clone((figA.plotly && figA.plotly.layout) || {});
+    Object.keys(layout).forEach(function(key){
+      if (/^(xaxis|yaxis)[0-9]+$/.test(key)){ delete layout[key]; }
+    });
+    layout.autosize = true;
+    layout.showlegend = true;
+    layout.hovermode = "closest";
+    layout.barmode = "overlay";
+    layout.annotations = [];
+    delete layout.height;
+    delete layout.title;
+    layout.xaxis = Object.assign({}, layout.xaxis || {});
+    layout.yaxis = Object.assign({}, layout.yaxis || {});
+    delete layout.xaxis.domain;
+    delete layout.yaxis.domain;
+    delete layout.xaxis.range;
+    delete layout.yaxis.range;
+
+    const data = [];
+    figA.plotly.data.forEach(function(trace){ data.push(overlayTrace(trace, "A", false)); });
+    figB.plotly.data.forEach(function(trace){ data.push(overlayTrace(trace, "B", true)); });
+    return {
+      id: "compare",
+      title: "Superposition",
+      plotly: {
+        data: data,
+        layout: layout,
+        width_in: Math.max(figA.plotly.width_in || 7, figB.plotly.width_in || 7),
+        height_in: Math.max(figA.plotly.height_in || 4, figB.plotly.height_in || 4)
+      }
+    };
+  }
+
+  function appendImageLayer(stack, fig, className){
+    const layer = document.createElement("div");
+    layer.className = className;
+    const src = figureImageSrc(fig);
+    if (src){
+      const img = document.createElement("img");
+      img.src = src;
+      img.alt = fig.title;
+      layer.appendChild(img);
+    }
+    stack.appendChild(layer);
+    return layer;
+  }
+
+  function resizeComparePlots(){
+    if (typeof Plotly === "undefined" || !Plotly.Plots){ return; }
+    compareBody.querySelectorAll(".compare-plot").forEach(function(el){
+      try { Plotly.Plots.resize(el); } catch (e) {}
+    });
+  }
+
+  function clearCompare(){
+    comparePlayers.forEach(function(player){ player.destroy(); });
+    comparePlayers = [];
+    compareBody.querySelectorAll(".compare-plot").forEach(function(el){
+      try { Plotly.purge(el); } catch (e) {}
+    });
+    compareBody.innerHTML = "";
+    compareOpacityWrap.style.display = "none";
+  }
+
+  function openCompare(mode){
+    if (selectedForCompare.length !== 2){ return; }
+    const figA = figStore[selectedForCompare[0]];
+    const figB = figStore[selectedForCompare[1]];
+    if (!figA || !figB){ return; }
+
+    clearCompare();
+    const pendingPlots = [];
+    compareTitle.textContent = (mode === "side" ? "Comparaison cote a cote : " : "Superposition : ")
+      + figA.title + " / " + figB.title;
+
+    if (mode === "side"){
+      const grid = document.createElement("div");
+      grid.className = "compare-grid";
+      grid.append(makeComparePane(figA, pendingPlots), makeComparePane(figB, pendingPlots));
+      compareBody.appendChild(grid);
+    } else if (canMergePlotly(figA) && canMergePlotly(figB)){
+      const stack = document.createElement("div");
+      stack.className = "compare-stack";
+      const plot = document.createElement("div");
+      plot.className = "compare-plot";
+      stack.appendChild(plot);
+      compareBody.appendChild(stack);
+      const merged = mergedPlotlyFigure(figA, figB);
+      pendingPlots.push(function(){ renderPlotly(plot, merged, true, null); });
+    } else {
+      const stack = document.createElement("div");
+      stack.className = "compare-stack";
+      appendImageLayer(stack, figA, "compare-layer");
+      const second = appendImageLayer(stack, figB, "compare-layer secondary");
+      compareOpacity.value = "55";
+      second.style.opacity = "0.55";
+      compareOpacityWrap.style.display = "flex";
+      compareBody.appendChild(stack);
+    }
+
+    compareOverlay.classList.add("show");
+    setTimeout(function(){
+      pendingPlots.forEach(function(fn){ fn(); });
+      resizeComparePlots();
+    }, 30);
+  }
+
+  function closeCompare(){
+    compareOverlay.classList.remove("show");
+    clearCompare();
   }
 
   // ----------------------------------------------------------
@@ -520,7 +850,22 @@
 
   document.getElementById("ovClose").addEventListener("click", closeOverlay);
   overlay.addEventListener("click", function(e){ if (e.target === overlay){ closeOverlay(); } });
-  document.addEventListener("keydown", function(e){ if (e.key === "Escape"){ closeOverlay(); } });
+  document.getElementById("compareClose").addEventListener("click", closeCompare);
+  compareOverlay.addEventListener("click", function(e){ if (e.target === compareOverlay){ closeCompare(); } });
+  compareSide.addEventListener("click", function(){ openCompare("side"); });
+  compareStack.addEventListener("click", function(){ openCompare("stack"); });
+  compareOpacity.addEventListener("input", function(){
+    const value = String(Number(compareOpacity.value) / 100);
+    compareBody.querySelectorAll(".compare-layer.secondary").forEach(function(layer){
+      layer.style.opacity = value;
+    });
+  });
+  document.addEventListener("keydown", function(e){
+    if (e.key === "Escape"){
+      closeOverlay();
+      closeCompare();
+    }
+  });
 
   // ----------------------------------------------------------
   // Messages depuis l'extension
@@ -534,6 +879,7 @@
       }
       card.remove();
     }
+    removeCompareSelection(id);
     delete figStore[id];
   }
 
@@ -548,6 +894,8 @@
       removeCard(msg.id);
       n = Math.max(0, n - 1); refreshCount();
     } else if (msg.type === "reset"){
+      closeOverlay();
+      closeCompare();
       Object.keys(figStore).forEach(removeCard);
       list.innerHTML = "";
       n = 0;
@@ -567,6 +915,7 @@
   });
 
   refreshCount();
+  updateCompareToolbar();
   vscodeApi.postMessage({ type: "ready" });
 })();
 </script>
