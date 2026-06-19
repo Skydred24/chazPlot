@@ -65,23 +65,31 @@ function loadAll() {
   return out;
 }
 
+// Suppression de fichier best-effort, non bloquante.
+function unlinkAsync(id) {
+  fs.promises.unlink(figPath(id)).catch(function () { /* deja absent / ignore */ });
+}
+
 function evictIfNeeded(index) {
   const cap = maxFigures();
   if (cap === null) { return; }
   while (index.figures.length > cap) {
     const old = index.figures.shift();
-    try { fs.unlinkSync(figPath(old.id)); } catch (e) { /* ignore */ }
+    unlinkAsync(old.id);
   }
 }
 
+// NB : l'index (workspaceState) est mis a jour de facon synchrone et en
+// memoire — c'est petit et ca evite toute course read-modify-write entre
+// deux figures. Seules les E/S de fichiers (potentiellement volumineuses,
+// ex. animations) sont asynchrones, pour ne pas bloquer le thread de
+// l'extension. loadAll() tolere un fichier manquant, donc une ecriture qui
+// echoue reste sans danger (best-effort).
 function save(fig) {
   if (!figuresDir) { return; }
+  fs.promises.writeFile(figPath(fig.id), JSON.stringify(fig), "utf8")
+    .catch(function () { /* best-effort */ });
   const index = readIndex();
-  try {
-    fs.writeFileSync(figPath(fig.id), JSON.stringify(fig), "utf8");
-  } catch (e) {
-    return;
-  }
   index.figures = index.figures.filter(function (f) { return f.id !== fig.id; });
   index.figures.push({ id: fig.id, title: fig.title, tags: fig.tags || [], ts: fig.ts });
   index.nextId = Math.max(index.nextId, fig.id + 1);
@@ -93,16 +101,14 @@ function remove(id) {
   if (!figuresDir) { return; }
   const index = readIndex();
   index.figures = index.figures.filter(function (f) { return f.id !== id; });
-  try { fs.unlinkSync(figPath(id)); } catch (e) { /* ignore */ }
   writeIndex(index);
+  unlinkAsync(id);
 }
 
 function removeAll() {
   if (!figuresDir) { return; }
   const index = readIndex();
-  index.figures.forEach(function (f) {
-    try { fs.unlinkSync(figPath(f.id)); } catch (e) { /* ignore */ }
-  });
+  index.figures.forEach(function (f) { unlinkAsync(f.id); });
   index.figures = [];
   writeIndex(index);
 }
@@ -113,13 +119,14 @@ function updateTags(id, tags) {
   const entry = index.figures.find(function (f) { return f.id === id; });
   if (entry) { entry.tags = tags; }
   writeIndex(index);
-  // met aussi a jour le fichier figure
-  try {
-    const raw = fs.readFileSync(figPath(id), "utf8");
-    const fig = JSON.parse(raw);
-    fig.tags = tags;
-    fs.writeFileSync(figPath(id), JSON.stringify(fig), "utf8");
-  } catch (e) { /* ignore */ }
+  // met aussi a jour le fichier figure (lecture/ecriture asynchrone)
+  fs.promises.readFile(figPath(id), "utf8")
+    .then(function (raw) {
+      const fig = JSON.parse(raw);
+      fig.tags = tags;
+      return fs.promises.writeFile(figPath(id), JSON.stringify(fig), "utf8");
+    })
+    .catch(function () { /* fichier absent/corrompu : ignore */ });
 }
 
 module.exports = {

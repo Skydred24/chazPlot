@@ -21,12 +21,13 @@ sans bloquer le script.
   un Reload Window (pile propre a chaque workspace).
 - Titre de figure repris de `fig.canvas.manager.set_window_title(...)` si defini.
 
-## Architecture (3 fichiers)
+## Architecture
 
 ```
 spyder-plots/
 ├── package.json                      manifeste de l'extension
 ├── extension.js                      serveur HTTP local + panneau webview
+├── storage.js                        persistance des figures (disque + index)
 ├── media/
 │   ├── panel.html                    interface du panneau (UI + lecteur)
 │   └── plotly.min.js                 Plotly.js embarque
@@ -34,6 +35,7 @@ spyder-plots/
 │   ├── vscode_spyder_plots_backend.py   backend matplotlib (module://)
 │   └── _mpl_to_plotly.py             conversion figure -> Plotly
 └── test/
+    ├── test_convert.py               tests d'assertion du convertisseur (unittest)
     ├── test_plots.py                 demo (figures + 1 animation)
     ├── test_stress.py                banc de torture (25 cas limites)
     ├── test_capture.py               test capture de frames d'animation
