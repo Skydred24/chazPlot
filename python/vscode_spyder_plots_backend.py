@@ -50,6 +50,21 @@ def _port():
     return os.environ.get("VSCODE_PLOTS_PORT", "53210")
 
 
+def _port_file_path():
+    import tempfile
+    return os.path.join(tempfile.gettempdir(), "spyder-plots-port.json")
+
+
+def _port_from_file():
+    """Port actif ecrit par l'extension (fallback si l'env est perime)."""
+    try:
+        with open(_port_file_path(), "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return str(int(data.get("port")))
+    except Exception:
+        return None
+
+
 def _dpi():
     try:
         return float(os.environ.get("VSCODE_PLOTS_DPI", "200"))
@@ -178,27 +193,40 @@ def _capture_animation(anim):
 # Envoi reseau
 # ------------------------------------------------------------
 def _send_figure(payload):
-    """Envoie une figure (ou une animation) au serveur local de l'extension."""
+    """Envoie une figure (ou une animation) au serveur local de l'extension.
+
+    Essaie d'abord le port de l'environnement, puis le port lu dans le fichier
+    temporaire ecrit par l'extension (fallback si l'env est perime apres un
+    redemarrage de l'extension sur un autre port)."""
     global _WARNED
-    url = "http://127.0.0.1:" + _port() + "/figure"
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        urllib.request.urlopen(request, timeout=15.0)
-        return True
-    except (urllib.error.URLError, OSError):
-        if not _WARNED:
-            _WARNED = True
-            sys.stderr.write(
-                "[spyder-plots] Impossible de joindre l'extension VS Code sur le port "
-                + _port()
-                + ". Verifiez que l'extension est active, puis ouvrez un NOUVEAU terminal.\n"
-            )
-        return False
+    body = json.dumps(payload).encode("utf-8")
+    candidates = [_port()]
+    file_port = _port_from_file()
+    if file_port is not None and file_port not in candidates:
+        candidates.append(file_port)
+
+    for port in candidates:
+        url = "http://127.0.0.1:" + port + "/figure"
+        request = urllib.request.Request(
+            url,
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            urllib.request.urlopen(request, timeout=15.0)
+            return True
+        except (urllib.error.URLError, OSError):
+            continue
+
+    if not _WARNED:
+        _WARNED = True
+        sys.stderr.write(
+            "[spyder-plots] Impossible de joindre l'extension VS Code sur le port "
+            + _port()
+            + ". Verifiez que l'extension est active, puis ouvrez un NOUVEAU terminal.\n"
+        )
+    return False
 
 
 def _figure_title(manager):
