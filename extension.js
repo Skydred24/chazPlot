@@ -466,6 +466,14 @@ function setupPanel(p) {
     else if (msg.type === "saveAll") { saveAll(); }
     else if (msg.type === "delete") { deleteOne(msg.id); }
     else if (msg.type === "deleteAll") { deleteAll(); }
+    else if (msg.type === "copied") {
+      vscode.window.showInformationMessage("Figure copiée dans le presse-papiers.");
+    }
+    else if (msg.type === "copyFailed") {
+      vscode.window.showWarningMessage(
+        "Spyder Plots : copie impossible (" + String(msg.error || "") + "). Utilisez « Enregistrer »."
+      );
+    }
     else if (msg.type === "ready") { postToWebview({ type: "reset", figs: figures }); }
   });
 
