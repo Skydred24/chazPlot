@@ -439,6 +439,49 @@ def _has_unsupported_artist(ax, bar_rectangles):
 
 
 # ------------------------------------------------------------
+# Classification des axes (detection twinx)
+# ------------------------------------------------------------
+def _shares_x(a, b):
+    try:
+        return b in a.get_shared_x_axes().get_siblings(a)
+    except Exception:
+        return False
+
+
+def _same_position(a, b, eps=1e-3):
+    pa = a.get_position()
+    pb = b.get_position()
+    return (
+        abs(pa.x0 - pb.x0) < eps and abs(pa.x1 - pb.x1) < eps
+        and abs(pa.y0 - pb.y0) < eps and abs(pa.y1 - pb.y1) < eps
+    )
+
+
+def _classify_axes(axes_list):
+    """Pour chaque axe : {ax, suffix, is_twin, host_suffix}.
+    Un axe est un twin (twinx) s'il partage X avec un axe precedent ET occupe
+    la meme position. Les sous-graphes distincts (positions differentes) ne le
+    sont pas, meme avec sharex=True."""
+    infos = []
+    for index, ax in enumerate(axes_list):
+        infos.append({
+            "ax": ax,
+            "suffix": "" if index == 0 else str(index + 1),
+            "is_twin": False,
+            "host_suffix": None,
+        })
+    for i in range(len(infos)):
+        ax = infos[i]["ax"]
+        for j in range(i):
+            host = infos[j]["ax"]
+            if _shares_x(ax, host) and _same_position(ax, host):
+                infos[i]["is_twin"] = True
+                infos[i]["host_suffix"] = infos[j]["suffix"]
+                break
+    return infos
+
+
+# ------------------------------------------------------------
 # Point d'entree
 # ------------------------------------------------------------
 def convert_figure(fig):
@@ -463,8 +506,11 @@ def convert_figure(fig):
 
     total_points = 0
 
-    for index, ax in enumerate(axes_list):
-        suffix = "" if index == 0 else str(index + 1)
+    for info in _classify_axes(axes_list):
+        ax = info["ax"]
+        suffix = info["suffix"]
+        is_twin = info["is_twin"]
+        host_suffix = info["host_suffix"]
         axis_x = "xaxis" + suffix
         axis_y = "yaxis" + suffix
         axis_trace_start = len(data)
@@ -523,6 +569,37 @@ def convert_figure(fig):
                 trace["x"] = _dates_to_iso(trace["x"])
             if y_is_date and "y" in trace:
                 trace["y"] = _dates_to_iso(trace["y"])
+
+        # ---- twinx : l'axe secondaire reutilise le X de l'hote ----
+        if is_twin:
+            for trace in data[axis_trace_start:]:
+                trace["xaxis"] = "x" + host_suffix
+                trace["yaxis"] = "y" + suffix
+            layout[axis_y] = {
+                "overlaying": "y" + host_suffix,
+                "side": "right",
+                "anchor": "x" + host_suffix,
+                "title": {"text": ax.get_ylabel()},
+                "showgrid": False,
+                "zeroline": False,
+                "linecolor": "#444444",
+                "ticks": "outside",
+            }
+            if ax.get_yscale() == "log":
+                layout[axis_y]["type"] = "log"
+            ticks_y = _custom_ticks(ax.yaxis)
+            if ticks_y is not None and ax.get_yscale() != "log":
+                layout[axis_y]["tickvals"] = ticks_y[0]
+                layout[axis_y]["ticktext"] = ticks_y[1]
+            y_range = _axis_range(ax, "y")
+            if y_range is not None:
+                layout[axis_y]["range"] = y_range
+            if y_is_date:
+                layout[axis_y]["type"] = "date"
+                layout[axis_y].pop("tickvals", None)
+                layout[axis_y].pop("ticktext", None)
+                layout[axis_y].pop("range", None)
+            continue  # pas de bloc axe X / domaine / titre pour un twin
 
         # ---- axes : domaine, labels, echelle, limites, grille ----
         position = ax.get_position()

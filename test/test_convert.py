@@ -96,5 +96,27 @@ class ConvertLegendTests(unittest.TestCase):
         self.assertLess(leg["y"], 0.5)
 
 
+class ConvertTwinxTests(unittest.TestCase):
+    def tearDown(self):
+        plt.close("all")
+
+    def test_twinx_overlay_single_x(self):
+        fig, ax = plt.subplots()
+        ax.plot([0, 1, 2], [0, 1, 2])
+        ax2 = ax.twinx()
+        ax2.plot([0, 1, 2], [10, 5, 1])
+        spec = convert_figure(fig)
+        self.assertIsNotNone(spec)
+        # un seul axe X
+        x_axes = [k for k in spec["layout"] if k.startswith("xaxis")]
+        self.assertEqual(len(x_axes), 1)
+        # un axe Y secondaire en overlay a droite
+        self.assertEqual(spec["layout"]["yaxis2"]["overlaying"], "y")
+        self.assertEqual(spec["layout"]["yaxis2"]["side"], "right")
+        # les traces du twin pointent vers x principal et y2
+        y2_traces = [t for t in spec["data"] if t.get("yaxis") == "y2"]
+        self.assertTrue(y2_traces and all(t["xaxis"] == "x" for t in y2_traces))
+
+
 if __name__ == "__main__":
     unittest.main()
