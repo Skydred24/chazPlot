@@ -17,6 +17,8 @@ let nextId = 1;
 let server = null;
 let extContext = null;
 let activePort = null;
+let nextExportRequestId = 1;
+const pendingExports = {};
 
 // ------------------------------------------------------------
 // Activation
@@ -92,6 +94,7 @@ function startServer(port, attempt) {
 
   server.listen(port, "127.0.0.1", function () {
     activePort = port;
+    writePortFile(port);
     injectEnvironment(port);
   });
 }
@@ -103,6 +106,23 @@ function startServer(port, attempt) {
 //   VSCODE_PLOTS_PORT -> port du serveur
 //   VSCODE_PLOTS_DPI  -> dpi du rendu
 // ------------------------------------------------------------
+// Fichier de port (fallback pour le backend si VSCODE_PLOTS_PORT est perime).
+function portFilePath() {
+  return path.join(require("os").tmpdir(), "spyder-plots-port.json");
+}
+
+function writePortFile(port) {
+  try {
+    fs.writeFileSync(
+      portFilePath(),
+      JSON.stringify({ port: port, pid: process.pid, ts: Date.now() }),
+      "utf8"
+    );
+  } catch (e) {
+    // best-effort : l'injection env reste le canal principal
+  }
+}
+
 function injectEnvironment(port) {
   const cfg = vscode.workspace.getConfiguration("spyderPlots");
   const pyDir = path.join(extContext.extensionPath, "python");
@@ -130,6 +150,7 @@ function addFigure(data) {
     frames: hasFrames ? data.frames : null,
     interval: hasFrames ? Number(data.interval) || 100 : null,
     title: data.title ? String(data.title) : "Figure " + String(nextId),
+    tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
     ts: new Date().toLocaleTimeString()
   };
   nextId = nextId + 1;
@@ -148,6 +169,42 @@ function deleteOne(id) {
 function deleteAll() {
   figures = [];
   postToWebview({ type: "reset", figs: [] });
+}
+
+function normalizeTags(tags) {
+  const seen = {};
+  const out = [];
+  if (!Array.isArray(tags)) { return out; }
+  tags.forEach(function (tag) {
+    const clean = String(tag).trim();
+    const key = clean.toLowerCase();
+    if (clean.length > 0 && !seen[key]) {
+      seen[key] = true;
+      out.push(clean);
+    }
+  });
+  return out;
+}
+
+function updateTags(id, tags) {
+  const fig = figures.find(function (f) { return f.id === id; });
+  if (!fig) { return; }
+  fig.tags = normalizeTags(tags);
+  postToWebview({ type: "tags", id: id, tags: fig.tags });
+}
+
+function editTags(id) {
+  const fig = figures.find(function (f) { return f.id === id; });
+  if (!fig) { return; }
+  vscode.window.showInputBox({
+    title: "Tags - " + fig.title,
+    prompt: "Separez les tags par des virgules. Exemple : mach, gamma, test 1",
+    value: normalizeTags(fig.tags).join(", "),
+    placeHolder: "mach, gamma, test 1"
+  }).then(function (value) {
+    if (value === undefined) { return; }
+    updateTags(id, value.split(","));
+  });
 }
 
 // ------------------------------------------------------------
@@ -190,9 +247,85 @@ function writeFigure(fig, filePath, frameIndex) {
   return false;
 }
 
-function saveOne(id, frameIndex) {
+function writeDataUrl(filePath, dataUrl) {
+  const match = /^data:([^;,]+)(;base64)?,(.*)$/s.exec(dataUrl || "");
+  if (!match) {
+    throw new Error("data URL invalide");
+  }
+  const isBase64 = match[2] === ";base64";
+  const payload = match[3] || "";
+  const buffer = isBase64
+    ? Buffer.from(payload, "base64")
+    : Buffer.from(decodeURIComponent(payload), "utf8");
+  fs.writeFileSync(filePath, buffer);
+}
+
+async function plotlyExportOptions(fig) {
+  const formatPick = await vscode.window.showQuickPick([
+    { label: "PNG", description: "raster, qualite controlee par le DPI", value: "png" },
+    { label: "SVG", description: "vectoriel, recommande pour Word/Pandoc", value: "svg" }
+  ], { placeHolder: "Format d'export" });
+  if (!formatPick) { return null; }
+
+  let dpi = null;
+  let scale = 1;
+  if (formatPick.value === "png") {
+    const cfg = vscode.workspace.getConfiguration("spyderPlots");
+    const rawDpi = await vscode.window.showInputBox({
+      prompt: "DPI equivalent pour le PNG (comme savefig(dpi=...))",
+      value: String(cfg.get("dpi", 200)),
+      validateInput: function (value) {
+        const n = Number(value);
+        if (!isFinite(n) || n < 24 || n > 1200) {
+          return "Entrez un DPI entre 24 et 1200.";
+        }
+        return null;
+      }
+    });
+    if (rawDpi === undefined) { return null; }
+    dpi = Number(rawDpi);
+    scale = Math.max(0.25, dpi / 96);
+  }
+
+  const backgroundPick = await vscode.window.showQuickPick([
+    { label: "Fond blanc", description: "equivalent facecolor='white'", value: false },
+    { label: "Fond transparent", description: "equivalent transparent=True", value: true }
+  ], { placeHolder: "Fond de la figure" });
+  if (!backgroundPick) { return null; }
+
+  return {
+    format: formatPick.value,
+    dpi: dpi,
+    scale: scale,
+    transparent: backgroundPick.value
+  };
+}
+
+async function saveOne(id, frameIndex) {
   const fig = figures.find(function (f) { return f.id === id; });
   if (!fig) { return; }
+
+  if (fig.plotly && !fig.frames) {
+    const options = await plotlyExportOptions(fig);
+    if (!options) { return; }
+    const uri = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.file(path.join(workspaceDir(), defaultName(fig, options.format))),
+      filters: options.format === "svg"
+        ? { "Image SVG (vectoriel)": ["svg"] }
+        : { "Image PNG": ["png"] }
+    });
+    if (!uri) { return; }
+    const requestId = String(nextExportRequestId++);
+    pendingExports[requestId] = { filePath: uri.fsPath, title: fig.title };
+    postToWebview({
+      type: "exportPlotly",
+      id: fig.id,
+      requestId: requestId,
+      options: options
+    });
+    return;
+  }
+
   const cfg = vscode.workspace.getConfiguration("spyderPlots");
   const ext = fig.frames ? "png" : cfg.get("saveFormat", "png");
   vscode.window.showSaveDialog({
@@ -202,13 +335,28 @@ function saveOne(id, frameIndex) {
     if (!uri) { return; }
     try {
       writeFigure(fig, uri.fsPath, frameIndex);
-      vscode.window.showInformationMessage("Figure enregistrée : " + uri.fsPath);
+      vscode.window.showInformationMessage("Figure enregistree : " + uri.fsPath);
     } catch (err) {
-      vscode.window.showErrorMessage("Spyder Plots : échec de l'enregistrement (" + String(err) + ")");
+      vscode.window.showErrorMessage("Spyder Plots : echec de l'enregistrement (" + String(err) + ")");
     }
   });
 }
 
+function finishPlotlyExport(msg) {
+  const request = pendingExports[msg.requestId];
+  if (!request) { return; }
+  delete pendingExports[msg.requestId];
+  if (!msg.ok) {
+    vscode.window.showErrorMessage("Spyder Plots : echec de l'export Plotly (" + String(msg.error || "erreur inconnue") + ")");
+    return;
+  }
+  try {
+    writeDataUrl(request.filePath, msg.dataUrl);
+    vscode.window.showInformationMessage("Figure exportee : " + request.filePath);
+  } catch (err) {
+    vscode.window.showErrorMessage("Spyder Plots : echec de l'ecriture de l'export (" + String(err) + ")");
+  }
+}
 function pgfText(fig) {
   if (!fig || fig.pgf === null) { return null; }
   return Buffer.from(fig.pgf, "base64").toString("utf8");
@@ -303,6 +451,9 @@ function setupPanel(p) {
     if (msg.type === "save") { saveOne(msg.id, msg.frameIndex); }
     else if (msg.type === "copyPgf") { copyPgf(msg.id); }
     else if (msg.type === "savePgf") { savePgf(msg.id); }
+    else if (msg.type === "exportResult") { finishPlotlyExport(msg); }
+    else if (msg.type === "updateTags") { updateTags(msg.id, msg.tags); }
+    else if (msg.type === "editTags") { editTags(msg.id); }
     else if (msg.type === "saveAll") { saveAll(); }
     else if (msg.type === "delete") { deleteOne(msg.id); }
     else if (msg.type === "deleteAll") { deleteAll(); }
