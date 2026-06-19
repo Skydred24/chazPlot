@@ -289,6 +289,7 @@
   const compareChecks = {}; // id -> checkbox
   const selectedForCompare = [];
   let comparePlayers = [];
+  let searchQuery = "";  // filtre courant (titre/tags)
   let n = 0;
 
   function refreshCount(){
@@ -930,9 +931,11 @@
   // Overlay « agrandir »
   // ----------------------------------------------------------
   let ovPlayer = null;
+  let ovResizeObserver = null;
   function clearOverlay(){
     const ovCoords = document.getElementById("ovCoords");
     if (ovCoords){ ovCoords.textContent = ""; }
+    if (ovResizeObserver){ ovResizeObserver.disconnect(); ovResizeObserver = null; }
     if (ovPlayer){ ovPlayer.destroy(); ovPlayer = null; }
     if (ovBody.firstChild){
       try { Plotly.purge(ovBody.firstChild); } catch (e) {}
@@ -966,9 +969,21 @@
     }
     overlay.classList.add("show");
     if (fig.plotly){
-      setTimeout(function(){
-        try { Plotly.Plots.resize(ovBody.firstChild); } catch (e) {}
-      }, 30);
+      const plotEl = ovBody.firstChild;
+      // Re-dimensionne des que le conteneur a une taille reelle (l'overlay
+      // passe de display:none a flex) et a chaque changement de taille de la
+      // fenetre tant qu'il est ouvert. Deterministe, contrairement a un
+      // setTimeout fixe qui mesurait parfois une taille pas encore stabilisee.
+      if (typeof ResizeObserver !== "undefined"){
+        ovResizeObserver = new ResizeObserver(function(){
+          try { Plotly.Plots.resize(plotEl); } catch (e) {}
+        });
+        ovResizeObserver.observe(plotEl);
+      } else {
+        setTimeout(function(){
+          try { Plotly.Plots.resize(plotEl); } catch (e) {}
+        }, 30);
+      }
     }
   }
   function closeOverlay(){ overlay.classList.remove("show"); clearOverlay(); }
