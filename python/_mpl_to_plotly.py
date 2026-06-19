@@ -97,6 +97,59 @@ def _finite_list(values):
     return out
 
 
+def _as_float_array(values):
+    """ndarray de flottants. Convertit les dates (date/datetime/datetime64)
+    en datenums matplotlib si la conversion directe en float echoue."""
+    arr = np.asarray(values)
+    if arr.dtype.kind == "M":  # datetime64
+        import matplotlib.dates as mdates
+        return np.asarray(mdates.date2num(arr), dtype=float)
+    try:
+        return np.asarray(values, dtype=float)
+    except (TypeError, ValueError):
+        import matplotlib.dates as mdates
+        return np.asarray(mdates.date2num(values), dtype=float)
+
+
+def _is_date_axis(axis):
+    """True si l'axe utilise un converter de dates matplotlib."""
+    try:
+        import matplotlib.dates as mdates
+    except Exception:
+        return False
+    conv = None
+    getter = getattr(axis, "get_converter", None)
+    if callable(getter):
+        try:
+            conv = getter()
+        except Exception:
+            conv = None
+    if conv is None:
+        conv = getattr(axis, "converter", None)
+    if conv is None:
+        return False
+    date_types = [mdates.DateConverter]
+    for name in ("ConciseDateConverter", "_SwitchableDateConverter"):
+        if hasattr(mdates, name):
+            date_types.append(getattr(mdates, name))
+    if isinstance(conv, tuple(date_types)):
+        return True
+    # garde-fou si matplotlib renomme la classe interne
+    return "Date" in type(conv).__name__
+
+
+def _dates_to_iso(values):
+    """Liste de datenums matplotlib -> chaines ISO (None preserve)."""
+    import matplotlib.dates as mdates
+    out = []
+    for v in values:
+        if v is None:
+            out.append(None)
+        else:
+            out.append(mdates.num2date(v).isoformat())
+    return out
+
+
 def _axis_range(ax, which):
     """Limites matplotlib -> range Plotly (log10 si echelle log)."""
     if which == "x":
@@ -138,8 +191,8 @@ def _custom_ticks(axis):
 # Conversion des artistes
 # ------------------------------------------------------------
 def _convert_line(line, axis_suffix):
-    x = np.asarray(line.get_xdata(), dtype=float)
-    y = np.asarray(line.get_ydata(), dtype=float)
+    x = _as_float_array(line.get_xdata())
+    y = _as_float_array(line.get_ydata())
     if x.size == 0:
         return None, 0
 
@@ -400,6 +453,7 @@ def convert_figure(fig):
         suffix = "" if index == 0 else str(index + 1)
         axis_x = "xaxis" + suffix
         axis_y = "yaxis" + suffix
+        axis_trace_start = len(data)
 
         # rectangles appartenant a des barres (pour la detection)
         bar_rectangles = set()
@@ -446,6 +500,15 @@ def convert_figure(fig):
 
         if total_points > _MAX_POINTS:
             return None
+
+        # ---- axes temporels : datenums -> chaines ISO ----
+        x_is_date = _is_date_axis(ax.xaxis)
+        y_is_date = _is_date_axis(ax.yaxis)
+        for trace in data[axis_trace_start:]:
+            if x_is_date and "x" in trace:
+                trace["x"] = _dates_to_iso(trace["x"])
+            if y_is_date and "y" in trace:
+                trace["y"] = _dates_to_iso(trace["y"])
 
         # ---- axes : domaine, labels, echelle, limites, grille ----
         position = ax.get_position()
@@ -494,6 +557,17 @@ def convert_figure(fig):
             layout[axis_x]["range"] = x_range
         if y_range is not None:
             layout[axis_y]["range"] = y_range
+        # axe date : type 'date' et abandon des valeurs numeriques (datenums)
+        if x_is_date:
+            layout[axis_x]["type"] = "date"
+            layout[axis_x].pop("tickvals", None)
+            layout[axis_x].pop("ticktext", None)
+            layout[axis_x].pop("range", None)
+        if y_is_date:
+            layout[axis_y]["type"] = "date"
+            layout[axis_y].pop("tickvals", None)
+            layout[axis_y].pop("ticktext", None)
+            layout[axis_y].pop("range", None)
 
         # titre de l'axe -> annotation au-dessus du sous-graphe
         title = ax.get_title()

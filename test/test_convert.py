@@ -62,5 +62,23 @@ class ConvertBaseTests(unittest.TestCase):
                 self.assertNotIn("overlaying", val)
 
 
+import datetime as _dt
+
+
+class ConvertDateTests(unittest.TestCase):
+    def tearDown(self):
+        plt.close("all")
+
+    def test_date_axis_becomes_type_date(self):
+        fig, ax = plt.subplots()
+        days = [_dt.date(2024, 1, 1), _dt.date(2024, 1, 2), _dt.date(2024, 1, 3)]
+        ax.plot(days, [1, 2, 3])
+        spec = convert_figure(fig)
+        self.assertIsNotNone(spec)
+        self.assertEqual(spec["layout"]["xaxis"]["type"], "date")
+        # x converti en chaînes ISO (plus des datenums flottants)
+        self.assertIsInstance(spec["data"][0]["x"][0], str)
+
+
 if __name__ == "__main__":
     unittest.main()
