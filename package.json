@@ -2,7 +2,7 @@
   "name": "spyder-plots",
   "displayName": "Spyder Plots",
   "description": "Panneau de graphes matplotlib façon Spyder : plt.show() envoie les figures (et les animations) dans un panneau VS Code scrollable, avec lecteur d'animation, mode agrandir, enregistrer / tout enregistrer / supprimer / tout supprimer.",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "publisher": "hugo",
   "engines": {
     "vscode": "^1.75.0"
@@ -64,6 +64,12 @@
           "type": "boolean",
           "default": true,
           "description": "Ouvrir/afficher automatiquement le panneau quand une figure arrive."
+        },
+        "spyderPlots.maxPersistedFigures": {
+          "type": "number",
+          "default": 200,
+          "minimum": 0,
+          "description": "Nombre maximal de figures conservées entre les sessions (persistance disque). 0 = illimité ; au-delà, les plus anciennes sont évincées."
         }
       }
     }

@@ -13,16 +13,21 @@ sans bloquer le script.
 - **Enregistrer** (par figure, boite de dialogue PNG), **Tout enregistrer**
   (choix d'un dossier, fichiers numerotes), **Supprimer** (par figure),
   **Tout supprimer**.
+- **Copier** : met l'image de la figure dans le presse-papiers (collable
+  dans Word, un mail, un chat...).
 - Option "Ajuster a la largeur" (sinon taille native + scroll horizontal).
-- Le panneau garde les figures meme si on le masque (`retainContextWhenHidden`).
+- Le panneau garde les figures meme si on le masque (`retainContextWhenHidden`),
+  et **les figures sont persistees sur disque** : elles reapparaissent apres
+  un Reload Window (pile propre a chaque workspace).
 - Titre de figure repris de `fig.canvas.manager.set_window_title(...)` si defini.
 
-## Architecture (3 fichiers)
+## Architecture
 
 ```
 spyder-plots/
 ├── package.json                      manifeste de l'extension
 ├── extension.js                      serveur HTTP local + panneau webview
+├── storage.js                        persistance des figures (disque + index)
 ├── media/
 │   ├── panel.html                    interface du panneau (UI + lecteur)
 │   └── plotly.min.js                 Plotly.js embarque
@@ -30,6 +35,7 @@ spyder-plots/
 │   ├── vscode_spyder_plots_backend.py   backend matplotlib (module://)
 │   └── _mpl_to_plotly.py             conversion figure -> Plotly
 └── test/
+    ├── test_convert.py               tests d'assertion du convertisseur (unittest)
     ├── test_plots.py                 demo (figures + 1 animation)
     ├── test_stress.py                banc de torture (25 cas limites)
     ├── test_capture.py               test capture de frames d'animation
@@ -88,6 +94,9 @@ Si vous avez Node.js : `npx @vscode/vsce package` dans le dossier, puis
   animation (garde-fou memoire) ; **0 = illimite**
 - `spyderPlots.saveFormat` (defaut png) — format propose par defaut
 - `spyderPlots.autoReveal` (defaut true) — afficher le panneau a chaque figure
+- `spyderPlots.maxPersistedFigures` (defaut 200) — nombre max de figures
+  conservees entre les sessions (persistance disque) ; **0 = illimite**,
+  au-dela les plus anciennes sont evincees
 
 ## Limites connues
 
@@ -101,13 +110,14 @@ Conversion Plotly (revelees par `test/test_stress.py`) :
   converti en de multiples traces de lignes (lisible mais brouillon).
   Pour un vrai rendu, utilisez `plt.boxplot(..., patch_artist=True)` ou
   forcez le SVG.
-- **Legende** : le style est ameliore (cadre, fond, police), mais la
-  *position* exacte de matplotlib (`loc`, `bbox_to_anchor`) n'est pas
-  reproduite — la legende est placee en haut a droite.
-- **twinx (double axe Y)** : les deux axes sont traces mais se
-  superposent ; le second axe Y n'a pas d'echelle distincte propre.
-- **Dates** : un axe temporel matplotlib peut apparaitre en nombres
-  (datenum) cote Plotly.
+- **Legende** : la *position* suit desormais le `loc` de matplotlib
+  (`upper left`, `lower right`...). `loc='best'` reste place en haut a
+  droite, et `bbox_to_anchor` (legende hors-axes) n'est pas reproduit.
+- **twinx (double axe Y)** : l'axe Y secondaire est desormais trace en
+  *overlay* a droite avec sa propre echelle. `twiny` (double axe X)
+  n'est pas encore gere.
+- **Dates** : les axes temporels matplotlib sont convertis en axes `date`
+  Plotly (valeurs ISO).
 - Au-dela de ~500 000 points, ou si le SVG depasse 8 Mo, repli automatique
   vers le PNG.
 
@@ -115,6 +125,10 @@ Autres :
 
 - Les terminaux deja ouverts avant l'activation ne sont pas affectes :
   ouvrez-en un nouveau.
+- **Multi-fenetres** : le port actif est aussi ecrit dans un fichier
+  temporaire (`spyder-plots-port.json`) servant de repli au backend ;
+  ce fichier est partage, donc la derniere fenetre demarree « gagne ».
+  L'injection des variables d'environnement reste correcte par fenetre.
 - Si vous lancez Python **hors** de VS Code, le backend n'est pas actif
   (MPLBACKEND n'est pas defini) : comportement matplotlib normal.
 - Pour forcer le backend classique dans un terminal VS Code :

@@ -26,6 +26,7 @@ from matplotlib.container import BarContainer
 from matplotlib.patches import Rectangle
 
 _MAX_POINTS = 500000  # au-dela : figure trop lourde pour le JSON -> fallback
+_MS_PER_DAY = 86400000.0  # largeur de barre sur axe date : jours -> millisecondes
 
 _LINESTYLES = {
     "-": "solid",
@@ -36,6 +37,20 @@ _LINESTYLES = {
     "dashed": "dash",
     "dashdot": "dashdot",
     "dotted": "dot",
+}
+
+# Codes loc matplotlib -> ancrage Plotly. 0 ('best') non gere (defaut).
+_LEGEND_LOC = {
+    1: {"x": 0.99, "xanchor": "right", "y": 0.99, "yanchor": "top"},
+    2: {"x": 0.01, "xanchor": "left", "y": 0.99, "yanchor": "top"},
+    3: {"x": 0.01, "xanchor": "left", "y": 0.01, "yanchor": "bottom"},
+    4: {"x": 0.99, "xanchor": "right", "y": 0.01, "yanchor": "bottom"},
+    5: {"x": 0.99, "xanchor": "right", "y": 0.5, "yanchor": "middle"},
+    6: {"x": 0.01, "xanchor": "left", "y": 0.5, "yanchor": "middle"},
+    7: {"x": 0.99, "xanchor": "right", "y": 0.5, "yanchor": "middle"},
+    8: {"x": 0.5, "xanchor": "center", "y": 0.01, "yanchor": "bottom"},
+    9: {"x": 0.5, "xanchor": "center", "y": 0.99, "yanchor": "top"},
+    10: {"x": 0.5, "xanchor": "center", "y": 0.5, "yanchor": "middle"},
 }
 
 _MARKERS = {
@@ -97,6 +112,59 @@ def _finite_list(values):
     return out
 
 
+def _as_float_array(values):
+    """ndarray de flottants. Convertit les dates (date/datetime/datetime64)
+    en datenums matplotlib si la conversion directe en float echoue."""
+    arr = np.asarray(values)
+    if arr.dtype.kind == "M":  # datetime64
+        import matplotlib.dates as mdates
+        return np.asarray(mdates.date2num(arr), dtype=float)
+    try:
+        return np.asarray(values, dtype=float)
+    except (TypeError, ValueError):
+        import matplotlib.dates as mdates
+        return np.asarray(mdates.date2num(values), dtype=float)
+
+
+def _is_date_axis(axis):
+    """True si l'axe utilise un converter de dates matplotlib."""
+    try:
+        import matplotlib.dates as mdates
+    except Exception:
+        return False
+    conv = None
+    getter = getattr(axis, "get_converter", None)
+    if callable(getter):
+        try:
+            conv = getter()
+        except Exception:
+            conv = None
+    if conv is None:
+        conv = getattr(axis, "converter", None)
+    if conv is None:
+        return False
+    date_types = [mdates.DateConverter]
+    for name in ("ConciseDateConverter", "_SwitchableDateConverter"):
+        if hasattr(mdates, name):
+            date_types.append(getattr(mdates, name))
+    if isinstance(conv, tuple(date_types)):
+        return True
+    # garde-fou si matplotlib renomme la classe interne
+    return "Date" in type(conv).__name__
+
+
+def _dates_to_iso(values):
+    """Liste de datenums matplotlib -> chaines ISO (None preserve)."""
+    import matplotlib.dates as mdates
+    out = []
+    for v in values:
+        if v is None:
+            out.append(None)
+        else:
+            out.append(mdates.num2date(v).isoformat())
+    return out
+
+
 def _axis_range(ax, which):
     """Limites matplotlib -> range Plotly (log10 si echelle log)."""
     if which == "x":
@@ -138,8 +206,8 @@ def _custom_ticks(axis):
 # Conversion des artistes
 # ------------------------------------------------------------
 def _convert_line(line, axis_suffix):
-    x = np.asarray(line.get_xdata(), dtype=float)
-    y = np.asarray(line.get_ydata(), dtype=float)
+    x = _as_float_array(line.get_xdata())
+    y = _as_float_array(line.get_ydata())
     if x.size == 0:
         return None, 0
 
@@ -372,6 +440,74 @@ def _has_unsupported_artist(ax, bar_rectangles):
 
 
 # ------------------------------------------------------------
+# Classification des axes (detection twinx)
+# ------------------------------------------------------------
+def _shares_x(a, b):
+    try:
+        return b in a.get_shared_x_axes().get_siblings(a)
+    except Exception:
+        return False
+
+
+def _same_position(a, b, eps=1e-3):
+    pa = a.get_position()
+    pb = b.get_position()
+    return (
+        abs(pa.x0 - pb.x0) < eps and abs(pa.x1 - pb.x1) < eps
+        and abs(pa.y0 - pb.y0) < eps and abs(pa.y1 - pb.y1) < eps
+    )
+
+
+def _classify_axes(axes_list):
+    """Pour chaque axe : {ax, suffix, is_twin, host_suffix}.
+    Un axe est un twin (twinx) s'il partage X avec un axe precedent ET occupe
+    la meme position. Les sous-graphes distincts (positions differentes) ne le
+    sont pas, meme avec sharex=True."""
+    infos = []
+    for index, ax in enumerate(axes_list):
+        infos.append({
+            "ax": ax,
+            "suffix": "" if index == 0 else str(index + 1),
+            "is_twin": False,
+            "host_suffix": None,
+        })
+    for i in range(len(infos)):
+        ax = infos[i]["ax"]
+        for j in range(i):
+            host = infos[j]["ax"]
+            if _shares_x(ax, host) and _same_position(ax, host):
+                infos[i]["is_twin"] = True
+                infos[i]["host_suffix"] = infos[j]["suffix"]
+                break
+    return infos
+
+
+def _apply_legend(layout, ax):
+    """Active et positionne la legende si l'axe en porte une. S'applique
+    aussi bien a l'axe hote qu'a un axe twin (qui peut porter la legende)."""
+    legend = ax.get_legend()
+    if legend is None:
+        return
+    layout["showlegend"] = True
+    # Legende lisible : cadre, fond semi-transparent, police plus grande.
+    legend_layout = {
+        "font": {"size": 13},
+        "bgcolor": "rgba(255,255,255,0.88)",
+        "bordercolor": "rgba(80,80,80,0.55)",
+        "borderwidth": 1,
+        "xanchor": "right",
+        "x": 0.99,
+        "yanchor": "top",
+        "y": 0.99,
+    }
+    # position selon loc matplotlib (best/0 -> defaut haut-droite)
+    pos = _LEGEND_LOC.get(getattr(legend, "_loc", 0))
+    if pos:
+        legend_layout.update(pos)
+    layout["legend"] = legend_layout
+
+
+# ------------------------------------------------------------
 # Point d'entree
 # ------------------------------------------------------------
 def convert_figure(fig):
@@ -396,10 +532,14 @@ def convert_figure(fig):
 
     total_points = 0
 
-    for index, ax in enumerate(axes_list):
-        suffix = "" if index == 0 else str(index + 1)
+    for info in _classify_axes(axes_list):
+        ax = info["ax"]
+        suffix = info["suffix"]
+        is_twin = info["is_twin"]
+        host_suffix = info["host_suffix"]
         axis_x = "xaxis" + suffix
         axis_y = "yaxis" + suffix
+        axis_trace_start = len(data)
 
         # rectangles appartenant a des barres (pour la detection)
         bar_rectangles = set()
@@ -446,6 +586,55 @@ def convert_figure(fig):
 
         if total_points > _MAX_POINTS:
             return None
+
+        # ---- axes temporels : datenums -> chaines ISO ----
+        x_is_date = _is_date_axis(ax.xaxis)
+        y_is_date = _is_date_axis(ax.yaxis)
+        for trace in data[axis_trace_start:]:
+            if x_is_date and "x" in trace:
+                trace["x"] = _dates_to_iso(trace["x"])
+            if y_is_date and "y" in trace:
+                trace["y"] = _dates_to_iso(trace["y"])
+            # Sur un axe date, Plotly attend la largeur des barres en
+            # millisecondes (matplotlib la donne en jours).
+            if trace.get("type") == "bar" and "width" in trace:
+                horiz = trace.get("orientation") == "h"
+                if (horiz and y_is_date) or (not horiz and x_is_date):
+                    trace["width"] = [w * _MS_PER_DAY for w in trace["width"]]
+
+        # legende (valable pour l'axe hote comme pour un axe twin)
+        _apply_legend(layout, ax)
+
+        # ---- twinx : l'axe secondaire reutilise le X de l'hote ----
+        if is_twin:
+            for trace in data[axis_trace_start:]:
+                trace["xaxis"] = "x" + host_suffix
+                trace["yaxis"] = "y" + suffix
+            layout[axis_y] = {
+                "overlaying": "y" + host_suffix,
+                "side": "right",
+                "anchor": "x" + host_suffix,
+                "title": {"text": ax.get_ylabel()},
+                "showgrid": False,
+                "zeroline": False,
+                "linecolor": "#444444",
+                "ticks": "outside",
+            }
+            if ax.get_yscale() == "log":
+                layout[axis_y]["type"] = "log"
+            ticks_y = _custom_ticks(ax.yaxis)
+            if ticks_y is not None and ax.get_yscale() != "log":
+                layout[axis_y]["tickvals"] = ticks_y[0]
+                layout[axis_y]["ticktext"] = ticks_y[1]
+            y_range = _axis_range(ax, "y")
+            if y_range is not None:
+                layout[axis_y]["range"] = y_range
+            if y_is_date:
+                layout[axis_y]["type"] = "date"
+                layout[axis_y].pop("tickvals", None)
+                layout[axis_y].pop("ticktext", None)
+                layout[axis_y].pop("range", None)
+            continue  # pas de bloc axe X / domaine / titre pour un twin
 
         # ---- axes : domaine, labels, echelle, limites, grille ----
         position = ax.get_position()
@@ -494,6 +683,17 @@ def convert_figure(fig):
             layout[axis_x]["range"] = x_range
         if y_range is not None:
             layout[axis_y]["range"] = y_range
+        # axe date : type 'date' et abandon des valeurs numeriques (datenums)
+        if x_is_date:
+            layout[axis_x]["type"] = "date"
+            layout[axis_x].pop("tickvals", None)
+            layout[axis_x].pop("ticktext", None)
+            layout[axis_x].pop("range", None)
+        if y_is_date:
+            layout[axis_y]["type"] = "date"
+            layout[axis_y].pop("tickvals", None)
+            layout[axis_y].pop("ticktext", None)
+            layout[axis_y].pop("range", None)
 
         # titre de l'axe -> annotation au-dessus du sous-graphe
         title = ax.get_title()
@@ -509,20 +709,6 @@ def convert_figure(fig):
                 "showarrow": False,
                 "font": {"size": 14},
             })
-
-        if ax.get_legend() is not None:
-            layout["showlegend"] = True
-            # Legende lisible : cadre, fond semi-transparent, police plus grande.
-            layout["legend"] = {
-                "font": {"size": 13},
-                "bgcolor": "rgba(255,255,255,0.88)",
-                "bordercolor": "rgba(80,80,80,0.55)",
-                "borderwidth": 1,
-                "xanchor": "right",
-                "x": 0.99,
-                "yanchor": "top",
-                "y": 0.99,
-            }
 
     # filet de securite : aucune trace produite (artiste exotique passe
     # entre les mailles) -> on retombe sur le SVG plutot qu'un graphe vide.
