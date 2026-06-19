@@ -80,5 +80,21 @@ class ConvertDateTests(unittest.TestCase):
         self.assertIsInstance(spec["data"][0]["x"][0], str)
 
 
+class ConvertLegendTests(unittest.TestCase):
+    def tearDown(self):
+        plt.close("all")
+
+    def test_legend_lower_left(self):
+        fig, ax = plt.subplots()
+        ax.plot([0, 1], [0, 1], label="serie")
+        ax.legend(loc="lower left")
+        spec = convert_figure(fig)
+        leg = spec["layout"]["legend"]
+        self.assertEqual(leg["xanchor"], "left")
+        self.assertEqual(leg["yanchor"], "bottom")
+        self.assertLess(leg["x"], 0.5)
+        self.assertLess(leg["y"], 0.5)
+
+
 if __name__ == "__main__":
     unittest.main()

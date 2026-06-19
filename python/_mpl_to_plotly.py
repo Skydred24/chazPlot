@@ -38,6 +38,20 @@ _LINESTYLES = {
     "dotted": "dot",
 }
 
+# Codes loc matplotlib -> ancrage Plotly. 0 ('best') non gere (defaut).
+_LEGEND_LOC = {
+    1: {"x": 0.99, "xanchor": "right", "y": 0.99, "yanchor": "top"},
+    2: {"x": 0.01, "xanchor": "left", "y": 0.99, "yanchor": "top"},
+    3: {"x": 0.01, "xanchor": "left", "y": 0.01, "yanchor": "bottom"},
+    4: {"x": 0.99, "xanchor": "right", "y": 0.01, "yanchor": "bottom"},
+    5: {"x": 0.99, "xanchor": "right", "y": 0.5, "yanchor": "middle"},
+    6: {"x": 0.01, "xanchor": "left", "y": 0.5, "yanchor": "middle"},
+    7: {"x": 0.99, "xanchor": "right", "y": 0.5, "yanchor": "middle"},
+    8: {"x": 0.5, "xanchor": "center", "y": 0.01, "yanchor": "bottom"},
+    9: {"x": 0.5, "xanchor": "center", "y": 0.99, "yanchor": "top"},
+    10: {"x": 0.5, "xanchor": "center", "y": 0.5, "yanchor": "middle"},
+}
+
 _MARKERS = {
     "o": "circle",
     ".": "circle",
@@ -584,10 +598,11 @@ def convert_figure(fig):
                 "font": {"size": 14},
             })
 
-        if ax.get_legend() is not None:
+        legend = ax.get_legend()
+        if legend is not None:
             layout["showlegend"] = True
             # Legende lisible : cadre, fond semi-transparent, police plus grande.
-            layout["legend"] = {
+            legend_layout = {
                 "font": {"size": 13},
                 "bgcolor": "rgba(255,255,255,0.88)",
                 "bordercolor": "rgba(80,80,80,0.55)",
@@ -597,6 +612,11 @@ def convert_figure(fig):
                 "yanchor": "top",
                 "y": 0.99,
             }
+            # position selon loc matplotlib (best/0 -> defaut haut-droite)
+            pos = _LEGEND_LOC.get(getattr(legend, "_loc", 0))
+            if pos:
+                legend_layout.update(pos)
+            layout["legend"] = legend_layout
 
     # filet de securite : aucune trace produite (artiste exotique passe
     # entre les mailles) -> on retombe sur le SVG plutot qu'un graphe vide.
