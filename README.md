@@ -1,82 +1,54 @@
 # Spyder Plots — panneau de graphes matplotlib pour VS Code
 
 Reproduit le volet **Graphes** de Spyder dans VS Code : chaque `plt.show()`
-envoie la figure dans un panneau unique et scrollable, sans ouvrir de fenetre,
-sans bloquer le script.
+envoie la figure dans un panneau unique et scrollable, sans ouvrir de fenêtre
+et sans bloquer le script. Les figures deviennent des **graphes Plotly
+interactifs** (zoom, survol, export), les **animations** sont rejouées dans un
+lecteur intégré, et tout est **persisté** d'une session à l'autre.
 
-## Fonctionnalites
+## Fonctionnalités
 
-- `plt.show()` inchange dans vos scripts — le backend matplotlib est remplace
+- **`plt.show()` inchangé** : le backend matplotlib est remplacé
   automatiquement dans les terminaux VS Code.
-- Panneau unique, scroll vertical, les nouvelles figures s'ajoutent en bas
-  (avec defilement automatique vers la derniere).
-- **Enregistrer** (par figure, boite de dialogue PNG), **Tout enregistrer**
-  (choix d'un dossier, fichiers numerotes), **Supprimer** (par figure),
-  **Tout supprimer**.
-- **Copier** : met l'image de la figure dans le presse-papiers (collable
-  dans Word, un mail, un chat...).
-- Option "Ajuster a la largeur" (sinon taille native + scroll horizontal).
-- Le panneau garde les figures meme si on le masque (`retainContextWhenHidden`),
-  et **les figures sont persistees sur disque** : elles reapparaissent apres
-  un Reload Window (pile propre a chaque workspace).
-- Titre de figure repris de `fig.canvas.manager.set_window_title(...)` si defini.
+- **Graphes interactifs** (Plotly) : zoom, pan, valeurs au survol, autoscale,
+  double-clic pour réinitialiser. Repli automatique en **SVG** (toujours net)
+  pour les figures non convertibles, et **PNG** haute résolution toujours
+  généré pour l'enregistrement.
+- **Animations** matplotlib (`FuncAnimation` / `ArtistAnimation`) détectées
+  automatiquement et rejouées : lecture/pause, navigation frame par frame,
+  barre de navigation, vitesse 0.25×–4×.
+- **Agrandir** : overlay plein panneau qui re-rend en vectoriel (net à toute
+  taille), avec redimensionnement automatique.
+- **Copier** : met l'image de la figure dans le presse-papiers (collable dans
+  Word, un mail, un chat…).
+- **Enregistrer / Tout enregistrer** (PNG ou SVG), **Supprimer / Tout
+  supprimer**.
+- **Export LaTeX (PGF/TikZ)** : copie ou enregistre le code de la figure.
+- **Comparaison** : sélection de plusieurs graphes pour les superposer.
+- **Tags & recherche** : étiquetez les figures et filtrez par titre ou tag.
+- **Persistance** : les figures (et leurs tags) réapparaissent après un Reload
+  Window — pile propre à chaque workspace.
+- Option **« Ajuster à la largeur »** (sinon taille native + scroll horizontal).
 
-## Architecture
+## Installation
 
-```
-spyder-plots/
-├── package.json                      manifeste de l'extension
-├── extension.js                      serveur HTTP local + panneau webview
-├── storage.js                        persistance des figures (disque + index)
-├── media/
-│   ├── panel.html                    interface du panneau (UI + lecteur)
-│   └── plotly.min.js                 Plotly.js embarque
-├── python/
-│   ├── vscode_spyder_plots_backend.py   backend matplotlib (module://)
-│   └── _mpl_to_plotly.py             conversion figure -> Plotly
-└── test/
-    ├── test_convert.py               tests d'assertion du convertisseur (unittest)
-    ├── test_plots.py                 demo (figures + 1 animation)
-    ├── test_stress.py                banc de torture (25 cas limites)
-    ├── test_capture.py               test capture de frames d'animation
-    └── test_show.py                  test de routage show()
+### Paquet .vsix (recommandé)
+```bash
+npx @vscode/vsce package          # produit spyder-plots-0.5.0.vsix
+code --install-extension spyder-plots-0.5.0.vsix
 ```
 
-Fonctionnement : au demarrage, l'extension ouvre un serveur HTTP sur
-`127.0.0.1:53210` (ou le port libre suivant) et injecte dans les **nouveaux**
-terminaux :
+### Sans droits administrateur (Windows)
+Aucune compilation, aucun `npm install` (extension en JavaScript pur) :
+1. Copiez le dossier dans
+   `%USERPROFILE%\.vscode\extensions\hugo.spyder-plots-0.5.0`.
+2. Rechargez VS Code (`Ctrl+Shift+P` → « Reload Window »).
+3. Ouvrez un **nouveau terminal** (les variables d'environnement ne sont
+   injectées que dans les terminaux créés après l'activation).
+4. Lancez `python test/test_plots.py` : le panneau **Graphes** s'ouvre.
 
-- `MPLBACKEND=module://vscode_spyder_plots_backend`
-- `PYTHONPATH` += dossier `python/` de l'extension
-- `VSCODE_PLOTS_PORT`, `VSCODE_PLOTS_DPI`, `VSCODE_PLOTS_ANIM_DPI`
-
-A chaque `plt.show()`, le backend rend les figures en PNG (Agg, hors ecran),
-les envoie en POST a l'extension, puis les ferme — exactement le comportement
-inline de Spyder. Aucune dependance Python autre que matplotlib.
-
-## Installation sans droits administrateur (Windows)
-
-Aucune compilation, aucun `npm install` : l'extension est en JavaScript pur.
-
-1. Copiez le dossier `spyder-plots` dans :
-   `%USERPROFILE%\.vscode\extensions\hugo.spyder-plots-0.1.0`
-   (creez le dossier s'il n'existe pas ; le nom doit suivre le format
-   `editeur.nom-version`).
-2. Redemarrez VS Code (`Ctrl+Shift+P` → "Reload Window" suffit).
-3. Ouvrez un **nouveau terminal** (important : les variables d'environnement
-   ne sont injectees que dans les terminaux crees apres l'activation).
-4. Lancez `python test/test_plots.py` : le panneau **Graphes** s'ouvre a cote
-   de l'editeur avec les 3 figures.
-
-### Alternative : mode developpement
-
-Ouvrez le dossier `spyder-plots` dans VS Code et appuyez sur `F5`
-("Run Extension"). Une fenetre VS Code de test se lance avec l'extension active.
-
-### Alternative : paquet .vsix
-
-Si vous avez Node.js : `npx @vscode/vsce package` dans le dossier, puis
-`code --install-extension spyder-plots-0.1.0.vsix`.
+### Mode développement
+Ouvrez le dossier dans VS Code et appuyez sur `F5` (« Run Extension »).
 
 ## Commandes (Ctrl+Shift+P)
 
@@ -84,137 +56,89 @@ Si vous avez Node.js : `npx @vscode/vsce package` dans le dossier, puis
 - `Spyder Plots : tout enregistrer`
 - `Spyder Plots : supprimer tous les graphes`
 
-## Reglages (settings.json)
+## Réglages (settings.json)
 
-- `spyderPlots.port` (defaut 53210)
-- `spyderPlots.dpi` (defaut 200) — augmentez pour des PNG plus fins
-- `spyderPlots.animationDpi` (defaut 130) — resolution de chaque frame
-  d'animation (plus bas = plus leger/fluide ; plus haut = plus net)
-- `spyderPlots.animationMaxFrames` (defaut 600) — plafond de frames par
-  animation (garde-fou memoire) ; **0 = illimite**
-- `spyderPlots.saveFormat` (defaut png) — format propose par defaut
-- `spyderPlots.autoReveal` (defaut true) — afficher le panneau a chaque figure
-- `spyderPlots.maxPersistedFigures` (defaut 200) — nombre max de figures
-  conservees entre les sessions (persistance disque) ; **0 = illimite**,
-  au-dela les plus anciennes sont evincees
+- `spyderPlots.port` (défaut `53210`) — port local d'écoute (incrémenté si occupé).
+- `spyderPlots.dpi` (défaut `200`) — résolution des PNG.
+- `spyderPlots.animationDpi` (défaut `130`) — résolution de chaque frame d'animation.
+- `spyderPlots.animationMaxFrames` (défaut `600`) — plafond de frames par animation ; **0 = illimité**.
+- `spyderPlots.saveFormat` (défaut `png`) — format proposé par défaut.
+- `spyderPlots.autoReveal` (défaut `true`) — afficher le panneau à chaque figure.
+- `spyderPlots.maxPersistedFigures` (défaut `200`) — figures conservées entre sessions ; **0 = illimité**.
 
-## Limites connues
-
-Conversion Plotly (revelees par `test/test_stress.py`) :
-
-- **Artistes non geres -> rendu SVG** (toujours net, mais non interactif) :
-  fill_between, errorbar, contour/contourf, quiver/streamplot, axes
-  polaires, 3D, pie, et toute figure contenant des `text()`/`annotate()`
-  utilisateur (pour ne pas perdre l'annotation).
-- **boxplot** : les boites etant des `Line2D` par defaut, le graphe est
-  converti en de multiples traces de lignes (lisible mais brouillon).
-  Pour un vrai rendu, utilisez `plt.boxplot(..., patch_artist=True)` ou
-  forcez le SVG.
-- **Legende** : la *position* suit desormais le `loc` de matplotlib
-  (`upper left`, `lower right`...). `loc='best'` reste place en haut a
-  droite, et `bbox_to_anchor` (legende hors-axes) n'est pas reproduit.
-- **twinx (double axe Y)** : l'axe Y secondaire est desormais trace en
-  *overlay* a droite avec sa propre echelle. `twiny` (double axe X)
-  n'est pas encore gere.
-- **Dates** : les axes temporels matplotlib sont convertis en axes `date`
-  Plotly (valeurs ISO).
-- Au-dela de ~500 000 points, ou si le SVG depasse 8 Mo, repli automatique
-  vers le PNG.
-
-Autres :
-
-- Les terminaux deja ouverts avant l'activation ne sont pas affectes :
-  ouvrez-en un nouveau.
-- **Multi-fenetres** : le port actif est aussi ecrit dans un fichier
-  temporaire (`spyder-plots-port.json`) servant de repli au backend ;
-  ce fichier est partage, donc la derniere fenetre demarree « gagne ».
-  L'injection des variables d'environnement reste correcte par fenetre.
-- Si vous lancez Python **hors** de VS Code, le backend n'est pas actif
-  (MPLBACKEND n'est pas defini) : comportement matplotlib normal.
-- Pour forcer le backend classique dans un terminal VS Code :
-  `set MPLBACKEND=TkAgg` (cmd) ou `$env:MPLBACKEND="TkAgg"` (PowerShell).
-
-## v0.2 — Graphes interactifs (vrai graphe)
-
-Les figures sont desormais converties en **graphes Plotly interactifs**
-directement dans le panneau : zoom (molette ou rectangle), pan, valeurs
-au survol, double-clic pour reinitialiser, autoscale, export PNG via la
-barre d'outils du graphe. L'interactivite persiste apres la fin du script.
-
-Pipeline : a chaque plt.show(), le backend tente de convertir la figure
-matplotlib en specification Plotly (`python/_mpl_to_plotly.py`). Plotly.js
-est embarque dans l'extension (`media/plotly.min.js`) : aucun acces
-reseau, aucune dependance Python supplementaire.
-
-Artistes convertis : plot/courbes (styles, marqueurs, legendes),
-scatter (couleurs, tailles, colormaps), bar/barh (y compris etiquettes
-categorielles), imshow, pcolormesh, sous-graphes, echelles log,
-limites d'axes, grilles, titres.
-
-Fallback automatique en SVG (toujours net) si la figure contient un
-artiste non convertible : fill_between, errorbar, contour, patches
-libres, 3D... Le PNG haute resolution reste genere dans tous les cas
-pour Enregistrer / Tout enregistrer.
-
-Installation : pensez a copier le nouveau dossier `media/` avec le reste
-(`%USERPROFILE%\.vscode\extensions\hugo.spyder-plots-0.2.0`).
-
-## v0.3 — Animations + refonte visuelle
-
-### Animations matplotlib (FuncAnimation / ArtistAnimation)
-
-Les animations sont detectees automatiquement : a `plt.show()` (ou
-`anim.save()`), toutes les frames sont capturees et envoyees au panneau,
-qui affiche un **vrai lecteur d'animation** :
-
-- boutons **premiere frame, frame precedente, lecture/pause, frame
-  suivante, derniere frame** ;
-- **barre de navigation (scrubber)** pour sauter directement a une frame ;
-- compteur `frame / total` et selecteur de **vitesse** (0.25× a 4×) ;
-- badge `ANIM · Nf` sur la carte ;
-- **Enregistrer** sauvegarde la frame actuellement affichee en PNG.
-
-Cote Python, un writer (`AbstractMovieWriter`) capture chaque frame sans
-ecrire de fichier video. Par defaut le nombre de frames est plafonne a
-600 (garde-fou memoire), **reglable via `spyderPlots.animationMaxFrames`
-— 0 pour illimite** ; la resolution est reglable via
-`spyderPlots.animationDpi`.
-
-Conservez votre code matplotlib habituel :
+## Exemple
 
 ```python
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
-# ... fig, update ...
-anim = FuncAnimation(fig, update, frames=60, interval=40)
-plt.show()   # le lecteur apparait dans le panneau Graphes
+
+plt.plot([0, 1, 2], [3, 1, 4])
+plt.show()                      # apparaît dans le panneau Graphes
+
+fig, ax = plt.subplots()
+line, = ax.plot([], [])
+anim = FuncAnimation(fig, update, frames=60, interval=40)  # gardez la référence
+plt.show()                      # lecteur d'animation dans le panneau
 ```
 
-> Gardez une reference a l'objet `anim` (comme avec matplotlib classique),
-> sinon le ramasse-miettes peut le supprimer avant la capture.
+## Limites connues
 
-### Refonte visuelle
+- **Artistes non gérés → rendu SVG** (net mais non interactif) : `fill_between`,
+  `errorbar`, `contour`/`contourf`, `quiver`/`streamplot`, axes polaires, 3D,
+  `pie`, et toute figure contenant des `text()`/`annotate()`.
+- **boxplot** : converti en lignes (`Line2D`) ; utilisez
+  `plt.boxplot(..., patch_artist=True)` pour un meilleur rendu.
+- **Légende** : la position suit le `loc` matplotlib ; `bbox_to_anchor`
+  (légende hors-axes) n'est pas reproduit.
+- **twiny** (double axe X) non géré (twinx l'est : axe Y secondaire en overlay).
+- Au-delà de ~500 000 points, ou si le SVG dépasse 8 Mo, repli automatique en PNG.
+- **Multi-fenêtres** : un fichier de port temporaire sert de repli au backend ;
+  il est partagé (la dernière fenêtre démarrée « gagne »). L'injection des
+  variables d'environnement reste correcte par fenêtre.
+- Les terminaux ouverts **avant** l'activation ne sont pas affectés : ouvrez-en
+  un nouveau. Pour forcer le backend classique :
+  `set MPLBACKEND=TkAgg` (cmd) ou `$env:MPLBACKEND="TkAgg"` (PowerShell).
 
-- Cartes redessinees (coins arrondis, ombre legere, en-tete clair) et
-  barre d'outils plus lisible, entierement basees sur le theme VS Code.
-- Bouton **Agrandir** sur chaque graphe : ouvre un overlay plein panneau
-  qui **re-rend en vectoriel** (Plotly responsive / SVG), donc net a toute
-  taille — fini le flou en grand. Les animations s'y rejouent en grand.
-- **Legende** retravaillee (cadre, fond semi-transparent, police plus
-  grande) pour rester lisible par-dessus les courbes.
-- **Coordonnees au survol deportees** : plus d'info-bulle flottante sur le
-  graphe ; les coordonnees `x / y (/ z)` s'affichent discretement dans
-  l'en-tete de la carte (et dans la barre de l'overlay agrandi).
-- Hauteur des graphes Plotly proportionnelle a la largeur (donc plus
-  haute en plein ecran), recalculee au redimensionnement.
+## Architecture
 
-### Tester les limites
+```
+spyder-plots/
+├── package.json                         manifeste de l'extension
+├── extension.js                         serveur HTTP local + panneau webview
+├── storage.js                           persistance des figures (disque + index)
+├── media/
+│   ├── panel.html                       interface du panneau (UI + lecteur)
+│   └── plotly.min.js                    Plotly.js embarqué
+├── python/
+│   ├── vscode_spyder_plots_backend.py   backend matplotlib (module://)
+│   └── _mpl_to_plotly.py                conversion figure → Plotly
+└── test/
+    ├── test_convert.py                  tests d'assertion du convertisseur (unittest)
+    ├── test_plots.py                    démo (figures + 1 animation)
+    ├── test_stress.py                   banc de torture (25 cas limites)
+    ├── test_capture.py                  capture de frames d'animation
+    └── test_show.py                     routage de show()
+```
 
-`python test/test_stress.py` envoie 25 figures volontairement tordues
-(legendes surchargees, twinx, dates, contour, 3D, pie, scatter 120k,
-animations a titre/legende dynamiques...). Chaque titre est prefixe par
-le rendu attendu (`[PLOTLY?]`, `[SVG]`, `[ANIM]`, `[LIMITE]`) pour reperer
-d'un coup d'oeil les ecarts. Voir « Limites connues » plus bas.
+Au démarrage, l'extension ouvre un serveur HTTP sur `127.0.0.1:53210` (ou le
+port libre suivant) et injecte dans les **nouveaux** terminaux :
+`MPLBACKEND=module://vscode_spyder_plots_backend`, `PYTHONPATH` += le dossier
+`python/`, `VSCODE_PLOTS_PORT`, `VSCODE_PLOTS_DPI`, `VSCODE_PLOTS_ANIM_DPI`,
+`VSCODE_PLOTS_ANIM_MAX_FRAMES`. À chaque `plt.show()`, le backend convertit la
+figure (Plotly → SVG → PNG, ou frames d'animation) et l'envoie en POST au
+panneau. Aucune dépendance Python hors matplotlib/numpy.
 
-L'interface du panneau est desormais dans `media/panel.html` (plus simple
-a personnaliser). Pensez a copier ce fichier lors de l'installation.
+## Tests
+
+```bash
+python test/test_convert.py    # tests d'assertion du convertisseur (unittest)
+node --check extension.js storage.js
+```
+
+## Nouveautés v0.5.0
+
+- Persistance des figures sur disque (par workspace), chargement asynchrone.
+- Convertisseur : axes temporels (`date`), position de légende (`loc`), `twinx`.
+- Bouton **Copier** (image → presse-papiers).
+- Fiabilisation du port (fichier de repli côté backend).
+- Corrections : recherche par tags, redimensionnement de l'overlay « Agrandir ».
