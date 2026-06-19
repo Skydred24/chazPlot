@@ -10,6 +10,7 @@ const vscode = require("vscode");
 const http = require("http");
 const path = require("path");
 const fs = require("fs");
+const storage = require("./storage");
 
 let panel = null;          // WebviewPanel unique
 let figures = [];          // [{id, png(base64), title, ts}]
@@ -25,6 +26,10 @@ const pendingExports = {};
 // ------------------------------------------------------------
 function activate(context) {
   extContext = context;
+  storage.init(context);
+  figures = storage.loadAll();
+  nextId = storage.nextId();
+  figures.forEach(function (f) { if (f.id >= nextId) { nextId = f.id + 1; } });
   const cfg = vscode.workspace.getConfiguration("spyderPlots");
   startServer(cfg.get("port", 53210), 0);
 
@@ -155,6 +160,7 @@ function addFigure(data) {
   };
   nextId = nextId + 1;
   figures.push(fig);
+  storage.save(fig);
 
   const cfg = vscode.workspace.getConfiguration("spyderPlots");
   ensurePanel(cfg.get("autoReveal", true));
@@ -163,11 +169,13 @@ function addFigure(data) {
 
 function deleteOne(id) {
   figures = figures.filter(function (f) { return f.id !== id; });
+  storage.remove(id);
   postToWebview({ type: "remove", id: id });
 }
 
 function deleteAll() {
   figures = [];
+  storage.removeAll();
   postToWebview({ type: "reset", figs: [] });
 }
 
@@ -190,6 +198,7 @@ function updateTags(id, tags) {
   const fig = figures.find(function (f) { return f.id === id; });
   if (!fig) { return; }
   fig.tags = normalizeTags(tags);
+  storage.updateTags(id, fig.tags);
   postToWebview({ type: "tags", id: id, tags: fig.tags });
 }
 
