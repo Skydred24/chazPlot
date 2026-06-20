@@ -1,5 +1,5 @@
 // ============================================================
-// Spyder Plots — extension VS Code
+// Chaz Plots — extension VS Code
 // Reçoit les figures matplotlib envoyées par le backend Python
 // (python/vscode_spyder_plots_backend.py) et les affiche dans un
 // panneau webview scrollable, façon volet "Graphes" de Spyder.
@@ -37,11 +37,11 @@ function activate(context) {
     figures.forEach(function (f) { if (f.id >= nextId) { nextId = f.id + 1; } });
     postToWebview({ type: "reset", figs: figures });
   });
-  const cfg = vscode.workspace.getConfiguration("spyderPlots");
+  const cfg = vscode.workspace.getConfiguration("chazPlots");
   startServer(cfg.get("port", 53210), 0);
 
   // --- Sérialiseur pour survivre au détachement de la fenêtre ---
-  vscode.window.registerWebviewPanelSerializer("spyderPlots", {
+  vscode.window.registerWebviewPanelSerializer("chazPlots", {
     async deserializeWebviewPanel(webviewPanel, state) {
       panel = webviewPanel;
       setupPanel(panel);
@@ -49,9 +49,9 @@ function activate(context) {
   });
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("spyderPlots.open", () => ensurePanel(true)),
-    vscode.commands.registerCommand("spyderPlots.deleteAll", deleteAll),
-    vscode.commands.registerCommand("spyderPlots.saveAll", saveAll)
+    vscode.commands.registerCommand("chazPlots.open", () => ensurePanel(true)),
+    vscode.commands.registerCommand("chazPlots.deleteAll", deleteAll),
+    vscode.commands.registerCommand("chazPlots.saveAll", saveAll)
   );
 }
 
@@ -89,7 +89,7 @@ function startServer(port, attempt) {
       });
     } else if (req.method === "GET" && req.url === "/ping") {
       res.writeHead(200, { "Content-Type": "text/plain" });
-      res.end("spyder-plots");
+      res.end("chaz-plots");
     } else {
       res.writeHead(404);
       res.end();
@@ -100,7 +100,7 @@ function startServer(port, attempt) {
     if (err && err.code === "EADDRINUSE" && attempt < 20) {
       startServer(port + 1, attempt + 1);
     } else {
-      vscode.window.showErrorMessage("Spyder Plots : impossible d'ouvrir un port local (" + String(err) + ")");
+      vscode.window.showErrorMessage("Chaz Plots : impossible d'ouvrir un port local (" + String(err) + ")");
     }
   });
 
@@ -120,7 +120,7 @@ function startServer(port, attempt) {
 // ------------------------------------------------------------
 // Fichier de port (fallback pour le backend si VSCODE_PLOTS_PORT est perime).
 function portFilePath() {
-  return path.join(require("os").tmpdir(), "spyder-plots-port.json");
+  return path.join(require("os").tmpdir(), "chaz-plots-port.json");
 }
 
 function writePortFile(port) {
@@ -136,7 +136,7 @@ function writePortFile(port) {
 }
 
 function injectEnvironment(port) {
-  const cfg = vscode.workspace.getConfiguration("spyderPlots");
+  const cfg = vscode.workspace.getConfiguration("chazPlots");
   const pyDir = path.join(extContext.extensionPath, "python");
   const env = extContext.environmentVariableCollection;
   env.clear();
@@ -169,7 +169,7 @@ function addFigure(data) {
   figures.push(fig);
   storage.save(fig);
 
-  const cfg = vscode.workspace.getConfiguration("spyderPlots");
+  const cfg = vscode.workspace.getConfiguration("chazPlots");
   ensurePanel(cfg.get("autoReveal", true));
   postToWebview({ type: "add", fig: fig });
 }
@@ -286,7 +286,7 @@ async function plotlyExportOptions(fig) {
   let dpi = null;
   let scale = 1;
   if (formatPick.value === "png") {
-    const cfg = vscode.workspace.getConfiguration("spyderPlots");
+    const cfg = vscode.workspace.getConfiguration("chazPlots");
     const rawDpi = await vscode.window.showInputBox({
       prompt: "DPI equivalent pour le PNG (comme savefig(dpi=...))",
       value: String(cfg.get("dpi", 200)),
@@ -342,7 +342,7 @@ async function saveOne(id, frameIndex) {
     return;
   }
 
-  const cfg = vscode.workspace.getConfiguration("spyderPlots");
+  const cfg = vscode.workspace.getConfiguration("chazPlots");
   const ext = fig.frames ? "png" : cfg.get("saveFormat", "png");
   vscode.window.showSaveDialog({
     defaultUri: vscode.Uri.file(path.join(workspaceDir(), defaultName(fig, ext))),
@@ -353,7 +353,7 @@ async function saveOne(id, frameIndex) {
       writeFigure(fig, uri.fsPath, frameIndex);
       vscode.window.showInformationMessage("Figure enregistree : " + uri.fsPath);
     } catch (err) {
-      vscode.window.showErrorMessage("Spyder Plots : echec de l'enregistrement (" + String(err) + ")");
+      vscode.window.showErrorMessage("Chaz Plots : echec de l'enregistrement (" + String(err) + ")");
     }
   });
 }
@@ -363,14 +363,14 @@ function finishPlotlyExport(msg) {
   if (!request) { return; }
   delete pendingExports[msg.requestId];
   if (!msg.ok) {
-    vscode.window.showErrorMessage("Spyder Plots : echec de l'export Plotly (" + String(msg.error || "erreur inconnue") + ")");
+    vscode.window.showErrorMessage("Chaz Plots : echec de l'export Plotly (" + String(msg.error || "erreur inconnue") + ")");
     return;
   }
   try {
     writeDataUrl(request.filePath, msg.dataUrl);
     vscode.window.showInformationMessage("Figure exportee : " + request.filePath);
   } catch (err) {
-    vscode.window.showErrorMessage("Spyder Plots : echec de l'ecriture de l'export (" + String(err) + ")");
+    vscode.window.showErrorMessage("Chaz Plots : echec de l'ecriture de l'export (" + String(err) + ")");
   }
 }
 function pgfText(fig) {
@@ -382,13 +382,13 @@ function copyPgf(id) {
   const fig = figures.find(function (f) { return f.id === id; });
   const text = pgfText(fig);
   if (text === null) {
-    vscode.window.showWarningMessage("Spyder Plots : aucun code PGF/TikZ disponible pour cette figure.");
+    vscode.window.showWarningMessage("Chaz Plots : aucun code PGF/TikZ disponible pour cette figure.");
     return;
   }
   vscode.env.clipboard.writeText(text).then(function () {
     vscode.window.showInformationMessage("Code PGF/TikZ copie dans le presse-papiers.");
   }, function (err) {
-    vscode.window.showErrorMessage("Spyder Plots : impossible de copier le PGF/TikZ (" + String(err) + ")");
+    vscode.window.showErrorMessage("Chaz Plots : impossible de copier le PGF/TikZ (" + String(err) + ")");
   });
 }
 
@@ -396,7 +396,7 @@ function savePgf(id) {
   const fig = figures.find(function (f) { return f.id === id; });
   const text = pgfText(fig);
   if (text === null) {
-    vscode.window.showWarningMessage("Spyder Plots : aucun code PGF/TikZ disponible pour cette figure.");
+    vscode.window.showWarningMessage("Chaz Plots : aucun code PGF/TikZ disponible pour cette figure.");
     return;
   }
   vscode.window.showSaveDialog({
@@ -408,14 +408,14 @@ function savePgf(id) {
       fs.writeFileSync(uri.fsPath, text, "utf8");
       vscode.window.showInformationMessage("Code PGF/TikZ enregistre : " + uri.fsPath);
     } catch (err) {
-      vscode.window.showErrorMessage("Spyder Plots : echec de l'enregistrement PGF/TikZ (" + String(err) + ")");
+      vscode.window.showErrorMessage("Chaz Plots : echec de l'enregistrement PGF/TikZ (" + String(err) + ")");
     }
   });
 }
 
 function saveAll() {
   if (figures.length === 0) {
-    vscode.window.showInformationMessage("Spyder Plots : aucune figure à enregistrer.");
+    vscode.window.showInformationMessage("Chaz Plots : aucune figure à enregistrer.");
     return;
   }
   vscode.window.showOpenDialog({
@@ -426,7 +426,7 @@ function saveAll() {
   }).then(function (uris) {
     if (!uris || uris.length === 0) { return; }
     const dir = uris[0].fsPath;
-    const cfg = vscode.workspace.getConfiguration("spyderPlots");
+    const cfg = vscode.workspace.getConfiguration("chazPlots");
     const ext = cfg.get("saveFormat", "png");
     let count = 0;
     for (let i = 0; i < figures.length; i = i + 1) {
@@ -440,7 +440,7 @@ function saveAll() {
         // on continue avec les suivantes
       }
     }
-    vscode.window.showInformationMessage("Spyder Plots : " + String(count) + " figure(s) enregistrée(s) dans " + dir);
+    vscode.window.showInformationMessage("Chaz Plots : " + String(count) + " figure(s) enregistrée(s) dans " + dir);
   });
 }
 
@@ -478,7 +478,7 @@ function setupPanel(p) {
     }
     else if (msg.type === "copyFailed") {
       vscode.window.showWarningMessage(
-        "Spyder Plots : copie impossible (" + String(msg.error || "") + "). Utilisez « Enregistrer »."
+        "Chaz Plots : copie impossible (" + String(msg.error || "") + "). Utilisez « Enregistrer »."
       );
     }
     else if (msg.type === "ready") { postToWebview({ type: "reset", figs: figures }); }
@@ -499,7 +499,7 @@ function ensurePanel(reveal) {
     return;
   }
   panel = vscode.window.createWebviewPanel(
-    "spyderPlots",
+    "chazPlots",
     "Graphes",
     { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
     {
@@ -543,7 +543,7 @@ function webviewHtml(webview) {
   return [
     "<!DOCTYPE html><html lang='fr'><head><meta charset='UTF-8'></head>",
     "<body style='font-family:sans-serif;padding:24px'>",
-    "<h3>Spyder Plots</h3>",
+    "<h3>Chaz Plots</h3>",
     "<p>Interface introuvable (media/panel.html manquant).",
     " Reinstallez l'extension.</p>",
     "</body></html>",

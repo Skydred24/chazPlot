@@ -1,10 +1,14 @@
-# Spyder Plots — panneau de graphes matplotlib pour VS Code
+# Chaz Plots — panneau de graphes matplotlib pour VS Code
 
 Reproduit le volet **Graphes** de Spyder dans VS Code : chaque `plt.show()`
 envoie la figure dans un panneau unique et scrollable, sans ouvrir de fenêtre
 et sans bloquer le script. Les figures deviennent des **graphes Plotly
 interactifs** (zoom, survol, export), les **animations** sont rejouées dans un
 lecteur intégré, et tout est **persisté** d'une session à l'autre.
+
+> **Nom de l'extension : « Chaz Plots »** (anciennement « Spyder Plots »).
+> Dans cette doc, « Spyder » désigne uniquement l'IDE dont on reproduit le
+> volet *Graphes* — ce n'est pas le nom de l'extension.
 
 ## Fonctionnalités
 
@@ -34,14 +38,14 @@ lecteur intégré, et tout est **persisté** d'une session à l'autre.
 
 ### Paquet .vsix (recommandé)
 ```bash
-npx @vscode/vsce package          # produit spyder-plots-0.5.0.vsix
-code --install-extension spyder-plots-0.5.0.vsix
+npx @vscode/vsce package          # produit chaz-plots-0.5.0.vsix
+code --install-extension chaz-plots-0.5.0.vsix
 ```
 
 ### Sans droits administrateur (Windows)
 Aucune compilation, aucun `npm install` (extension en JavaScript pur) :
 1. Copiez le dossier dans
-   `%USERPROFILE%\.vscode\extensions\hugo.spyder-plots-0.5.0`.
+   `%USERPROFILE%\.vscode\extensions\hugo.chaz-plots-0.5.0`.
 2. Rechargez VS Code (`Ctrl+Shift+P` → « Reload Window »).
 3. Ouvrez un **nouveau terminal** (les variables d'environnement ne sont
    injectées que dans les terminaux créés après l'activation).
@@ -52,19 +56,19 @@ Ouvrez le dossier dans VS Code et appuyez sur `F5` (« Run Extension »).
 
 ## Commandes (Ctrl+Shift+P)
 
-- `Spyder Plots : ouvrir le panneau`
-- `Spyder Plots : tout enregistrer`
-- `Spyder Plots : supprimer tous les graphes`
+- `Chaz Plots : ouvrir le panneau`
+- `Chaz Plots : tout enregistrer`
+- `Chaz Plots : supprimer tous les graphes`
 
 ## Réglages (settings.json)
 
-- `spyderPlots.port` (défaut `53210`) — port local d'écoute (incrémenté si occupé).
-- `spyderPlots.dpi` (défaut `200`) — résolution des PNG.
-- `spyderPlots.animationDpi` (défaut `130`) — résolution de chaque frame d'animation.
-- `spyderPlots.animationMaxFrames` (défaut `600`) — plafond de frames par animation ; **0 = illimité**.
-- `spyderPlots.saveFormat` (défaut `png`) — format proposé par défaut.
-- `spyderPlots.autoReveal` (défaut `true`) — afficher le panneau à chaque figure.
-- `spyderPlots.maxPersistedFigures` (défaut `200`) — figures conservées entre sessions ; **0 = illimité**.
+- `chazPlots.port` (défaut `53210`) — port local d'écoute (incrémenté si occupé).
+- `chazPlots.dpi` (défaut `200`) — résolution des PNG.
+- `chazPlots.animationDpi` (défaut `130`) — résolution de chaque frame d'animation.
+- `chazPlots.animationMaxFrames` (défaut `600`) — plafond de frames par animation ; **0 = illimité**.
+- `chazPlots.saveFormat` (défaut `png`) — format proposé par défaut.
+- `chazPlots.autoReveal` (défaut `true`) — afficher le panneau à chaque figure.
+- `chazPlots.maxPersistedFigures` (défaut `200`) — figures conservées entre sessions ; **0 = illimité**.
 
 ## Exemple
 
@@ -102,7 +106,7 @@ plt.show()                      # lecteur d'animation dans le panneau
 ## Architecture
 
 ```
-spyder-plots/
+chaz-plots/
 ├── package.json                         manifeste de l'extension
 ├── extension.js                         serveur HTTP local + panneau webview
 ├── storage.js                           persistance des figures (disque + index)

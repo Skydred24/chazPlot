@@ -2,7 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> Note: this is the `spyder-plots` VS Code extension. The parent directory
+> Note: this is the Chaz Plots VS Code extension (folder `spyder-plots/`, npm
+> name `chaz-plots`). The parent directory
 > `coach_mobile/` holds an unrelated Flutter/Python project with its own
 > CLAUDE.md — do not conflate the two.
 
@@ -42,7 +43,7 @@ node --check storage.js
 
 # Package a .vsix (requires Node):
 npx @vscode/vsce package
-code --install-extension spyder-plots-<version>.vsix
+code --install-extension chaz-plots-<version>.vsix
 
 # Exercise the extension (run from a NEW integrated terminal in the dev host):
 python test/test_plots.py    # 3 figures + 1 animation (smoke test)
@@ -144,10 +145,10 @@ Figures live in-memory in `extension.js` (`figures[]`, `nextId`) **and are
 persisted to disk** by `storage.js`: one JSON file per figure under
 `context.storageUri/figures/<id>.json` (per-workspace; falls back to
 `globalStorageUri` if no workspace), plus a light index in `workspaceState`
-(`spyderPlots.index` = `{nextId, figures:[{id,title,tags,ts}]}`). `activate()`
+(`chazPlots.index` = `{nextId, figures:[{id,title,tags,ts}]}`). `activate()`
 calls `storage.loadAll()` so figures reappear after a Reload Window;
 `addFigure`/`deleteOne`/`deleteAll`/`updateTags` mirror their mutation to
-`storage`. The `spyderPlots.maxPersistedFigures` setting (default 200, 0 =
+`storage`. The `chazPlots.maxPersistedFigures` setting (default 200, 0 =
 unlimited) evicts the oldest. Persistence is best-effort — any I/O error is
 swallowed and never blocks the in-memory display.
 
@@ -158,7 +159,7 @@ with `viewColumn: undefined` to avoid yanking a detached panel back.
 ### Port discovery (env + file fallback)
 
 `extension.js` injects `VSCODE_PLOTS_PORT` into new terminals **and** writes the
-active port to `os.tmpdir()/spyder-plots-port.json` on each successful
+active port to `os.tmpdir()/chaz-plots-port.json` on each successful
 `listen()`. The backend's `_send_figure` tries the env port first, then falls
 back to the file port (re-read each send) if the env one is unreachable — this
 survives an extension restart on a new port for terminals opened earlier.

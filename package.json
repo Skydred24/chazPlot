@@ -1,6 +1,6 @@
 {
-  "name": "spyder-plots",
-  "displayName": "Spyder Plots",
+  "name": "chaz-plots",
+  "displayName": "Chaz Plots",
   "description": "Panneau de graphes matplotlib façon Spyder : plt.show() envoie les figures (et les animations) dans un panneau VS Code scrollable, avec lecteur d'animation, mode agrandir, enregistrer / tout enregistrer / supprimer / tout supprimer.",
   "version": "0.5.0",
   "publisher": "hugo",
@@ -18,54 +18,54 @@
   "contributes": {
     "commands": [
       {
-        "command": "spyderPlots.open",
-        "title": "Spyder Plots : ouvrir le panneau"
+        "command": "chazPlots.open",
+        "title": "Chaz Plots : ouvrir le panneau"
       },
       {
-        "command": "spyderPlots.deleteAll",
-        "title": "Spyder Plots : supprimer tous les graphes"
+        "command": "chazPlots.deleteAll",
+        "title": "Chaz Plots : supprimer tous les graphes"
       },
       {
-        "command": "spyderPlots.saveAll",
-        "title": "Spyder Plots : tout enregistrer"
+        "command": "chazPlots.saveAll",
+        "title": "Chaz Plots : tout enregistrer"
       }
     ],
     "configuration": {
-      "title": "Spyder Plots",
+      "title": "Chaz Plots",
       "properties": {
-        "spyderPlots.port": {
+        "chazPlots.port": {
           "type": "number",
           "default": 53210,
           "description": "Port local d'écoute pour recevoir les figures (incrémenté automatiquement s'il est occupé)."
         },
-        "spyderPlots.dpi": {
+        "chazPlots.dpi": {
           "type": "number",
           "default": 200,
           "description": "Résolution (dpi) du rendu PNG des figures (utilisé pour l'enregistrement et le fallback d'affichage)."
         },
-        "spyderPlots.animationDpi": {
+        "chazPlots.animationDpi": {
           "type": "number",
           "default": 130,
           "description": "Résolution (dpi) de chaque frame d'animation. Plus bas = animations plus légères et fluides ; plus haut = frames plus nettes mais plus lourdes."
         },
-        "spyderPlots.animationMaxFrames": {
+        "chazPlots.animationMaxFrames": {
           "type": "number",
           "default": 600,
           "minimum": 0,
           "description": "Nombre maximal de frames capturées par animation (garde-fou mémoire : chaque frame est un PNG conservé en mémoire). Mettez 0 pour ne pas limiter — attention aux animations très longues (charge réseau et RAM)."
         },
-        "spyderPlots.saveFormat": {
+        "chazPlots.saveFormat": {
           "type": "string",
           "enum": ["png", "svg"],
           "default": "png",
           "description": "Format proposé par défaut pour Enregistrer / Tout enregistrer."
         },
-        "spyderPlots.autoReveal": {
+        "chazPlots.autoReveal": {
           "type": "boolean",
           "default": true,
           "description": "Ouvrir/afficher automatiquement le panneau quand une figure arrive."
         },
-        "spyderPlots.maxPersistedFigures": {
+        "chazPlots.maxPersistedFigures": {
           "type": "number",
           "default": 200,
           "minimum": 0,

@@ -9,7 +9,7 @@ const vscode = require("vscode");
 const path = require("path");
 const fs = require("fs");
 
-const INDEX_KEY = "spyderPlots.index";
+const INDEX_KEY = "chazPlots.index";
 let ctx = null;
 let figuresDir = null;
 
@@ -41,7 +41,7 @@ function figPath(id) {
 }
 
 function maxFigures() {
-  const cfg = vscode.workspace.getConfiguration("spyderPlots");
+  const cfg = vscode.workspace.getConfiguration("chazPlots");
   const n = cfg.get("maxPersistedFigures", 200);
   return n > 0 ? n : null;
 }
