@@ -1109,28 +1109,40 @@
     el._spConfig = config;
     el._spHasInset = false;
     Plotly.newPlot(el, data, layout, config);
-    // Memorise l'etat de Ctrl/Cmd au debut du glisser : si enfonce, le zoom
-    // suivant (plotly_relayout) devient un encart au lieu d'un zoom normal.
-    el.addEventListener("mousedown", function(ev){
-      el._spInsetCtrlPending = !!(ev.ctrlKey || ev.metaKey);
+    // Ctrl/Cmd+clic sur la loupe de la modebar = (des)arme le mode encart : le
+    // prochain trace de zoom devient un encart. Clic normal = zoom standard.
+    el.addEventListener("click", function(ev){
+      let node = ev.target, onZoomBtn = false;
+      while (node && node !== el){
+        if (node.classList && node.classList.contains("modebar-btn")){
+          onZoomBtn = node.getAttribute("data-val") === "zoom";
+          break;
+        }
+        node = node.parentNode;
+      }
+      if (!onZoomBtn){ return; }
+      el._spInsetArmed = (ev.ctrlKey || ev.metaKey) ? !el._spInsetArmed : false;
+      if (coordsEl){ coordsEl.textContent = el._spInsetArmed ? "Mode encart : trace une zone a agrandir" : ""; }
     }, true);
     if (el.on){
       el.on("plotly_relayout", function(update){
-        // Ctrl+glisser sur la loupe = encart (sinon zoom normal). Le flag est
-        // arme au mousedown selon l'etat de la touche Ctrl/Cmd.
-        if (!el._spInsetCtrlPending){ return; }
-        el._spInsetCtrlPending = false;
+        // Mode encart arme par Ctrl+clic sur la loupe : le trace de zoom
+        // devient un encart au lieu d'un zoom normal.
+        if (!el._spInsetArmed){ return; }
         const selection = parseZoomInsetSelection(update);
         if (!selection){ return; }
+        el._spInsetArmed = false;
+        if (coordsEl){ coordsEl.textContent = ""; }
         applyZoomInset(el, selection);
       });
     }
     if (coordsEl && el.on){
       el.on("plotly_hover", function(ev){
+        if (el._spInsetArmed){ return; }   // garde le message du mode encart
         const pt = ev && ev.points && ev.points[0];
         if (pt){ coordsEl.textContent = hoverText(pt); }
       });
-      el.on("plotly_unhover", function(){ coordsEl.textContent = ""; });
+      el.on("plotly_unhover", function(){ if (!el._spInsetArmed){ coordsEl.textContent = ""; } });
     }
   }
   let resizeTimer = null;
