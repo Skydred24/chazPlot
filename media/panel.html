@@ -5,6 +5,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'nonce-{{nonce}}' {{cspSource}};">
 <script src="{{plotlyUri}}"></script>
 <script src="{{errorMathUri}}"></script>
+<script src="{{insetLayoutUri}}"></script>
 <style>
   :root{
     color-scheme: light dark;
@@ -651,18 +652,6 @@
     return [Math.min(p0, p1), Math.max(p0, p1)];
   }
 
-  function rectArea(rect){
-    if (!rect){ return 0; }
-    return Math.max(0, rect.x1 - rect.x0) * Math.max(0, rect.y1 - rect.y0);
-  }
-
-  function rectOverlapArea(a, b){
-    if (!a || !b){ return 0; }
-    const x = Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0));
-    const y = Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
-    return x * y;
-  }
-
   function normalizedRange(range, axisLayout){
     if (!range || range.length < 2){ return null; }
     const a = rangeNumber(range[0], axisLayout);
@@ -709,83 +698,8 @@
     return { x0: px - halfW, x1: px + halfW, y0: py - halfH, y1: py + halfH };
   }
 
-  function makeInsetCandidates(xDomain, yDomain){
-    const dx = Math.max(0.1, xDomain[1] - xDomain[0]);
-    const dy = Math.max(0.1, yDomain[1] - yDomain[0]);
-    const padX = dx * 0.025;
-    const padY = dy * 0.025;
-    const sizes = [0.34, 0.29, 0.24, 0.20];
-    const candidates = [];
-    const seen = {};
-    sizes.forEach(function(scale, sizeIndex){
-      const w = dx * scale;
-      const h = dy * scale;
-      const xs = [
-        xDomain[0] + padX,
-        xDomain[0] + (dx - w) / 2,
-        xDomain[1] - padX - w
-      ];
-      const ys = [
-        yDomain[1] - padY - h,
-        yDomain[0] + (dy - h) / 2,
-        yDomain[0] + padY
-      ];
-      xs.forEach(function(x0, xi){
-        ys.forEach(function(y0, yi){
-          const x1 = x0 + w;
-          const y1 = y0 + h;
-          if (x0 < xDomain[0] || x1 > xDomain[1] || y0 < yDomain[0] || y1 > yDomain[1]){ return; }
-          const key = [x0, x1, y0, y1].map(function(v){ return v.toFixed(4); }).join(":");
-          if (seen[key]){ return; }
-          seen[key] = true;
-          candidates.push({
-            xDomain: [x0, x1],
-            yDomain: [y0, y1],
-            x0: x0, x1: x1, y0: y0, y1: y1,
-            outerXDomain: xDomain,
-            outerYDomain: yDomain,
-            sizePenalty: sizeIndex * 2,
-            centerPenalty: (xi === 1 ? 1 : 0) + (yi === 1 ? 1 : 0)
-          });
-        });
-      });
-    });
-    return candidates;
-  }
-
-  function scoreInsetCandidate(candidate, selectedPaper, traces, annotations, baseLayout, selection, xAxis, yAxis, xFull, yFull){
-    const candidateArea = Math.max(rectArea(candidate), 0.0001);
-    let score = candidate.sizePenalty + candidate.centerPenalty;
-    score += (rectOverlapArea(candidate, selectedPaper) / candidateArea) * 9000;
-
-    traces.forEach(function(trace){
-      const xs = Array.isArray(trace.x) ? trace.x : [];
-      const ys = Array.isArray(trace.y) ? trace.y : [];
-      const count = Math.min(xs.length, ys.length);
-      if (count === 0){ return; }
-      const step = Math.max(1, Math.floor(count / 2200));
-      for (let i = 0; i < count; i += step){
-        const xv = pointNumber(xs[i], xAxis);
-        const yv = pointNumber(ys[i], yAxis);
-        if (xv === null || yv === null){ continue; }
-        const px = valueToPaper(xv, xFull, candidate.outerXDomain);
-        const py = valueToPaper(yv, yFull, candidate.outerYDomain);
-        if (px === null || py === null){ continue; }
-        if (px >= candidate.x0 && px <= candidate.x1 && py >= candidate.y0 && py <= candidate.y1){
-          score += 1;
-        }
-      }
-    });
-
-    (annotations || []).forEach(function(annotation){
-      const rect = annotationPaperRect(annotation, baseLayout, selection, xFull, yFull, candidate.outerXDomain, candidate.outerYDomain);
-      if (!rect){ return; }
-      const overlap = rectOverlapArea(candidate, rect);
-      if (overlap > 0){ score += 120 + (overlap / candidateArea) * 500; }
-    });
-    return score;
-  }
-
+  // Construit le contexte numerique (coordonnees paper, points convertis) et
+  // delegue le choix de placement au module pur InsetLayout.
   function chooseInsetDomain(baseData, baseLayout, selection){
     const xAxis = baseLayout[selection.xaxisKey] || {};
     const yAxis = baseLayout[selection.yaxisKey] || {};
@@ -794,16 +708,31 @@
     const traces = matchingAxisTraces(baseData, selection.xRef, selection.yRef);
     const xFull = fullAxisRange(baseLayout, traces, selection.xaxisKey, "x");
     const yFull = fullAxisRange(baseLayout, traces, selection.yaxisKey, "y");
-    const candidates = makeInsetCandidates(xDomain, yDomain);
-    if (candidates.length === 0){ return { xDomain: [0.62, 0.96], yDomain: [0.60, 0.94] }; }
-    if (!xFull || !yFull || traces.length === 0){ return candidates[0]; }
+    if (!xFull || !yFull || traces.length === 0){
+      const cands = InsetLayout.makeInsetCandidates(xDomain, yDomain);
+      return cands.length ? { xDomain: cands[0].xDomain, yDomain: cands[0].yDomain }
+                          : { xDomain: [0.62, 0.96], yDomain: [0.60, 0.94] };
+    }
     const selectedPaper = selectionPaperRect(baseLayout, selection, xFull, yFull, xDomain, yDomain, xAxis, yAxis);
-    const annotations = Array.isArray(baseLayout.annotations) ? baseLayout.annotations : [];
-    candidates.sort(function(a, b){
-      return scoreInsetCandidate(a, selectedPaper, traces, annotations, baseLayout, selection, xAxis, yAxis, xFull, yFull) -
-             scoreInsetCandidate(b, selectedPaper, traces, annotations, baseLayout, selection, xAxis, yAxis, xFull, yFull);
+    const baseAnns = Array.isArray(baseLayout.annotations) ? baseLayout.annotations : [];
+    const annotationRects = [];
+    baseAnns.forEach(function(a){
+      const r = annotationPaperRect(a, baseLayout, selection, xFull, yFull, xDomain, yDomain);
+      if (r){ annotationRects.push(r); }
     });
-    return candidates[0];
+    // points convertis en nombres (dates gerees par pointNumber)
+    const numTraces = traces.map(function(t){
+      const xs = Array.isArray(t.x) ? t.x : [];
+      const ys = Array.isArray(t.y) ? t.y : [];
+      const n = Math.min(xs.length, ys.length);
+      const ox = new Array(n), oy = new Array(n);
+      for (let i = 0; i < n; i++){ ox[i] = pointNumber(xs[i], xAxis); oy[i] = pointNumber(ys[i], yAxis); }
+      return { x: ox, y: oy };
+    });
+    return InsetLayout.chooseInsetDomain({
+      xDomain: xDomain, yDomain: yDomain, xFull: xFull, yFull: yFull,
+      selectedPaper: selectedPaper, traces: numTraces, annotationRects: annotationRects
+    });
   }
 
   function nextAxisIndex(layout){

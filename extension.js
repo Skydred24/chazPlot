@@ -529,6 +529,9 @@ function webviewHtml(webview) {
   const errorMathUri = webview.asWebviewUri(
     vscode.Uri.file(path.join(extContext.extensionPath, "media", "error_math.js"))
   );
+  const insetLayoutUri = webview.asWebviewUri(
+    vscode.Uri.file(path.join(extContext.extensionPath, "media", "inset_layout.js"))
+  );
   const htmlPath = path.join(extContext.extensionPath, "media", "panel.html");
   let template = null;
   try {
@@ -541,7 +544,8 @@ function webviewHtml(webview) {
       .replace(/{{nonce}}/g, nonce)
       .replace(/{{cspSource}}/g, webview.cspSource)
       .replace(/{{plotlyUri}}/g, String(plotlyUri))
-      .replace(/{{errorMathUri}}/g, String(errorMathUri));
+      .replace(/{{errorMathUri}}/g, String(errorMathUri))
+      .replace(/{{insetLayoutUri}}/g, String(insetLayoutUri));
   }
   // media/panel.html introuvable : l'extension est mal installee.
   return [
