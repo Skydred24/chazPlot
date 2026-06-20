@@ -149,11 +149,14 @@ Le placement du zoom-inset (« agrandir une zone » en mode overlay) — génér
 des candidats, scoring (évite données/annotations, préfère un coin vide),
 bornage, et **géométrie pixel↔paper + transformations move/resize** — vit dans
 `media/inset_layout.js` (module pur UMD : `self.InsetLayout` dans le webview,
-`require` sous Node), testé par `test/test_inset_layout.js`. Le déplacement et le
-redimensionnement de l'encart se font via un **overlay HTML** dans `panel.html`
-(corps = déplacer, 4 poignées de coin = redimensionner) ; c'est l'overlay qui
-capte les `pointer` events. La bordure colorée visible reste une shape Plotly
-non-éditable (présente dans les exports PNG).
+`require` sous Node), testé par `test/test_inset_layout.js`. L'encart se **crée**
+en maintenant `Ctrl`/`Cmd` pendant un tracé de zoom (flag armé au `mousedown`,
+consommé dans le listener `plotly_relayout`) — pas de bouton dédié ; **clic
+droit** sur l'encart pour l'effacer. Le déplacement et le redimensionnement se
+font via un **overlay HTML** dans `panel.html` (corps = déplacer, 4 poignées de
+coin = redimensionner) ; c'est l'overlay qui capte les `pointer` events. La
+bordure colorée visible reste une shape Plotly non-éditable (présente dans les
+exports PNG).
 
 ### State & persistence
 
