@@ -141,5 +141,36 @@ check("resizePlacement: respecte la taille mini contre le coin ancre", function 
   assert.ok(Math.abs(p.xDomain[0] - 0.48) < 1e-9, "x0 borne par mini (x1 - 0.12)");
   assert.ok(Math.abs(p.yDomain[1] - 0.42) < 1e-9, "y1 borne par mini (y0 + 0.12)");
 });
+check("resizePlacement: coin 'ne' ancre le coin 'sw' (les deux bords opposes intacts)", function () {
+  // ne = est + nord : bouge x1 (droite) et y1 (haut) ; x0 et y0 ancres
+  const p = IL.resizePlacement({ xDomain: [0.2, 0.6], yDomain: [0.3, 0.7] }, "ne", 0.1, 0.1, 0.12);
+  assert.ok(Math.abs(p.xDomain[0] - 0.2) < 1e-9, "x0 ancre");
+  assert.ok(Math.abs(p.xDomain[1] - 0.7) < 1e-9, "x1 deplace (+0.1)");
+  assert.ok(Math.abs(p.yDomain[0] - 0.3) < 1e-9, "y0 ancre");
+  assert.ok(Math.abs(p.yDomain[1] - 0.8) < 1e-9, "y1 deplace (+0.1)");
+});
+check("resizePlacement: coin 'sw' ancre le coin 'ne'", function () {
+  // sw = ouest + sud : bouge x0 (gauche) et y0 (bas) ; x1 et y1 ancres
+  const p = IL.resizePlacement({ xDomain: [0.2, 0.6], yDomain: [0.3, 0.7] }, "sw", -0.1, -0.1, 0.12);
+  assert.ok(Math.abs(p.xDomain[0] - 0.1) < 1e-9, "x0 deplace (-0.1)");
+  assert.ok(Math.abs(p.xDomain[1] - 0.6) < 1e-9, "x1 ancre");
+  assert.ok(Math.abs(p.yDomain[0] - 0.2) < 1e-9, "y0 deplace (-0.1)");
+  assert.ok(Math.abs(p.yDomain[1] - 0.7) < 1e-9, "y1 ancre");
+});
+check("resizePlacement: taille mini laisse le bord ancre intact", function () {
+  // se ecrase a la taille mini : le coin nw (x0, y1) ne doit pas bouger
+  const p = IL.resizePlacement({ xDomain: [0.2, 0.6], yDomain: [0.3, 0.7] }, "se", -0.5, 0.5, 0.12);
+  assert.ok(Math.abs(p.xDomain[0] - 0.2) < 1e-9, "x0 (ancre) intact");
+  assert.ok(Math.abs(p.yDomain[1] - 0.7) < 1e-9, "y1 (ancre) intact");
+  assert.ok(Math.abs(p.xDomain[1] - 0.32) < 1e-9, "x1 borne par mini (x0 + 0.12)");
+  assert.ok(Math.abs(p.yDomain[0] - 0.58) < 1e-9, "y0 borne par mini (y1 - 0.12)");
+});
+check("paperRectToPixels: yDomain partiel mappe le bon top (inversion)", function () {
+  const size = { l: 0, t: 0, w: 100, h: 200 };
+  const px = IL.paperRectToPixels({ xDomain: [0.0, 1.0], yDomain: [0.2, 0.6] }, size);
+  // top = t + (1 - y1) * h = 0 + (1 - 0.6) * 200 = 80 ; height = (0.6 - 0.2) * 200 = 80
+  assert.ok(Math.abs(px.top - 80) < 1e-9, "top = (1 - 0.6) * 200");
+  assert.ok(Math.abs(px.height - 80) < 1e-9, "height = 0.4 * 200");
+});
 
 console.log("\n" + passed + " tests OK");
