@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'nonce-{{nonce}}' {{cspSource}};">
 <script src="{{plotlyUri}}"></script>
+<script src="{{errorMathUri}}"></script>
 <style>
   :root{
     color-scheme: light dark;
@@ -206,6 +207,15 @@
   .compare-stack .compare-plot{ width:100%; height:100%; }
   .opacity-control{ display:none; align-items:center; gap:8px; font-size:12px; opacity:.9; }
   .opacity-control input{ width:150px; accent-color: var(--vscode-charts-blue, #3794ff); }
+  .error-panel{
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    padding:6px 14px; font-size:12px;
+    background: var(--vscode-sideBar-background, #252526);
+    border-bottom:1px solid var(--vscode-panel-border, #3c3c3c);
+  }
+  .error-panel .error-types{ display:flex; gap:10px; flex-wrap:wrap; }
+  .error-panel select{ margin-left:4px; }
+  .error-warn{ color: var(--vscode-charts-yellow, #cca700); font-size:11px; }
 </style>
 </head>
 <body class="fit">
@@ -249,6 +259,21 @@
         <input type="range" id="compareOpacity" min="0" max="100" value="55">
       </label>
       <button id="compareClose">Fermer x</button>
+      <button id="errorToggle" class="compact" disabled title="Disponible uniquement en superposition interactive (Plotly) avec au moins 2 courbes">Erreur</button>
+    </div>
+    <div class="error-panel" id="errorPanel" style="display:none">
+      <label>Reference :
+        <select id="errorRef"></select>
+      </label>
+      <span class="error-types">
+        <label><input type="checkbox" class="error-type" value="signed"> Difference signee</label>
+        <label><input type="checkbox" class="error-type" value="abs"> Erreur absolue</label>
+        <label><input type="checkbox" class="error-type" value="rel"> Erreur relative</label>
+        <label><input type="checkbox" class="error-type" value="relpct"> Erreur relative %</label>
+      </span>
+      <button id="errorApply" class="compact">Appliquer</button>
+      <button id="errorHide" class="compact">Masquer</button>
+      <span class="error-warn" id="errorWarn"></span>
     </div>
     <div class="compare-body" id="compareBody"></div>
   </div>
@@ -269,6 +294,13 @@
   const compareTitle = document.getElementById("compareTitle");
   const compareOpacityWrap = document.getElementById("compareOpacityWrap");
   const compareOpacity = document.getElementById("compareOpacity");
+  const errorToggle = document.getElementById("errorToggle");
+  const errorPanel = document.getElementById("errorPanel");
+  const errorRef = document.getElementById("errorRef");
+  const errorApply = document.getElementById("errorApply");
+  const errorHide = document.getElementById("errorHide");
+  const errorWarn = document.getElementById("errorWarn");
+  let errorState = { active: false, refKey: null, types: [] };
   const overlay = document.getElementById("overlay");
   const ovBody = document.getElementById("ovBody");
   const ovTitle = document.getElementById("ovTitle");
@@ -795,6 +827,102 @@
     return "#" + String(index + 1);
   }
 
+  // ----- Helpers d'aplatissement des courbes (pour le calcul d'erreur) -----
+
+  function numericX(values){
+    return values.map(function(v){
+      if (typeof v === "number"){ return v; }
+      const t = Date.parse(v);
+      return isNaN(t) ? Number(v) : t;
+    });
+  }
+
+  function flattenCurves(figs){
+    const curves = [];
+    let idx = 0;
+    figs.forEach(function(fig){
+      (fig.plotly && fig.plotly.data ? fig.plotly.data : []).forEach(function(trace){
+        const type = trace.type || "scatter";
+        if (type !== "scatter"){ return; } // barres exclues du calcul
+        const color = (trace.line && trace.line.color) ||
+                      (trace.marker && trace.marker.color) || null;
+        curves.push({
+          key: "c" + idx,
+          letter: compareLabel(idx),
+          name: trace.name || ("courbe " + (idx + 1)),
+          color: color,
+          x: numericX(trace.x || []),
+          y: (trace.y || []).map(Number)
+        });
+        idx++;
+      });
+    });
+    return curves;
+  }
+
+  function updateErrorButton(figs){
+    const mergeable = figs.length >= 2 && figs.every(canMergePlotly);
+    const enough = mergeable && flattenCurves(figs).length >= 2;
+    errorToggle.disabled = !enough;
+  }
+
+  function populateErrorRef(curves){
+    errorRef.innerHTML = "";
+    curves.forEach(function(c){
+      const opt = document.createElement("option");
+      opt.value = c.key;
+      opt.textContent = c.letter + " - " + c.name;
+      errorRef.appendChild(opt);
+    });
+    if (curves.length){ errorRef.value = curves[0].key; }
+  }
+
+  function openErrorPanel(){
+    const figs = selectedForCompare.map(function(id){ return figStore[id]; }).filter(Boolean);
+    populateErrorRef(flattenCurves(figs));
+    errorWarn.textContent = "";
+    errorPanel.style.display = "flex";
+  }
+
+  errorToggle.addEventListener("click", function(){
+    if (errorPanel.style.display === "none"){ openErrorPanel(); }
+    else { errorPanel.style.display = "none"; }
+  });
+
+  function currentComparePlotEl(){
+    return compareBody.querySelector(".compare-plot");
+  }
+
+  errorApply.addEventListener("click", function(){
+    const figs = selectedForCompare.map(function(id){ return figStore[id]; }).filter(Boolean);
+    const types = Array.prototype.slice
+      .call(document.querySelectorAll(".error-type:checked"))
+      .map(function(cb){ return cb.value; });
+    if (types.length === 0){ errorWarn.textContent = "Cochez au moins un type d'erreur."; return; }
+    const el = currentComparePlotEl();
+    if (!el){ return; }
+    errorState = { active: true, refKey: errorRef.value, types: types };
+    const merged = mergedPlotlyFigureWithErrors(figs, errorState.refKey, types);
+    Plotly.purge(el);
+    renderPlotly(el, merged, true, null);
+    Plotly.Plots.resize(el);
+    errorWarn.textContent = (merged._ignored && merged._ignored.length)
+      ? "Sans recouvrement X, ignorees : " + merged._ignored.join(", ")
+      : "";
+  });
+
+  errorHide.addEventListener("click", function(){
+    const figs = selectedForCompare.map(function(id){ return figStore[id]; }).filter(Boolean);
+    const el = currentComparePlotEl();
+    if (!el){ return; }
+    errorState = { active: false, refKey: null, types: [] };
+    errorWarn.textContent = "";
+    const merged = mergedPlotlyFigure(figs);
+    Plotly.purge(el);
+    renderPlotly(el, merged, true, null);
+    Plotly.Plots.resize(el);
+  });
+
   function overlayTrace(trace, label, index){
     const out = clone(trace);
     const secondary = index > 0;
@@ -850,6 +978,58 @@
       plotly: { data: data, layout: layout, width_in: widthIn, height_in: heightIn }
     };
   }
+
+  function allRelPct(typeIds){
+    return typeIds.length > 0 && typeIds.every(function(t){ return t === "relpct"; });
+  }
+
+  function mergedPlotlyFigureWithErrors(figs, refKey, typeIds){
+    const base = mergedPlotlyFigure(figs);      // superposition sur (x, y)
+    const layout = base.plotly.layout;
+    const curves = flattenCurves(figs);
+    const ref = curves.filter(function(c){ return c.key === refKey; })[0] || curves[0];
+
+    // Panneau du haut (superposition) reduit ; panneau du bas (erreurs).
+    layout.yaxis = Object.assign({}, layout.yaxis, { domain: [0.32, 1] });
+    layout.yaxis2 = {
+      domain: [0, 0.26], anchor: "x",
+      title: { text: allRelPct(typeIds) ? "erreur (%)" : "erreur" },
+      zeroline: true
+    };
+    layout.shapes = [{
+      type: "line", xref: "paper", x0: 0, x1: 1,
+      yref: "y2", y0: 0, y1: 0,
+      line: { color: "rgba(150,150,150,0.6)", width: 1, dash: "dot" }
+    }];
+
+    const data = base.plotly.data;
+    const ignored = [];
+    curves.forEach(function(c){
+      if (c.key === ref.key){ return; }
+      // Compte le nombre de types ayant produit une trace pour cette courbe.
+      let produced = 0;
+      typeIds.forEach(function(typeId){
+        const series = ErrorMath.buildErrorSeries(typeId, ref.x, ref.y, c.x, c.y);
+        // Aucun recouvrement pour ce type : on passe au suivant sans tracer.
+        if (series.y.every(function(v){ return v === null; })){ return; }
+        const meta = ErrorMath.ERROR_TYPES[typeId];
+        data.push({
+          type: "scatter", mode: "lines",
+          x: series.x, y: series.y,
+          xaxis: "x", yaxis: "y2",
+          connectgaps: false,
+          line: c.color ? { color: c.color } : {},
+          name: c.letter + "−" + ref.letter + " : " + c.name + " (" + meta.abbr + ")"
+        });
+        produced++;
+      });
+      // Une courbe est ignoree uniquement si AUCUN type n'a produit de trace.
+      if (produced === 0 && ignored.indexOf(c.letter) === -1){ ignored.push(c.letter); }
+    });
+    base._ignored = ignored;
+    return base;
+  }
+
   function appendImageLayer(stack, fig, className){
     const layer = document.createElement("div");
     layer.className = className;
@@ -904,6 +1084,7 @@
       compareBody.appendChild(stack);
       const merged = mergedPlotlyFigure(figs);
       pendingPlots.push(function(){ renderPlotly(plot, merged, true, null); });
+      updateErrorButton(figs);
     } else {
       const stack = document.createElement("div");
       stack.className = "compare-stack";
@@ -923,6 +1104,9 @@
     }, 30);
   }
   function closeCompare(){
+    errorState = { active: false, refKey: null, types: [] };
+    errorPanel.style.display = "none";
+    errorToggle.disabled = true;
     compareOverlay.classList.remove("show");
     clearCompare();
   }

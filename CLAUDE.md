@@ -139,6 +139,12 @@ Plotly figure posts `exportPlotly` with a `requestId`, and the webview replies
 `exportResult` with a data URL written by `finishPlotlyExport`. PNG/SVG/frame
 saves are synchronous in the extension (`writeFigure`).
 
+Error-curve calculation (« Erreur » button in overlay mode) lives in
+`media/error_math.js` (pure module, UMD wrapper: `self.ErrorMath` in the
+webview, `require` under Node), tested by `test/test_error_curves.js`. The
+Plotly glue (flattening traces, stacked residual subplot with 2 Y axes) remains
+in `panel.html`.
+
 ### State & persistence
 
 Figures live in-memory in `extension.js` (`figures[]`, `nextId`) **and are

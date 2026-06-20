@@ -29,6 +29,11 @@ lecteur intégré, et tout est **persisté** d'une session à l'autre.
   supprimer**.
 - **Export LaTeX (PGF/TikZ)** : copie ou enregistre le code de la figure.
 - **Comparaison** : sélection de plusieurs graphes pour les superposer.
+  - **Erreur entre courbes** : en superposition, bouton « Erreur » pour tracer
+    l'écart de N courbes par rapport à une référence choisie (différence signée,
+    absolue, relative, relative %), dans un sous-graphe lié à axe X partagé.
+    Interpolation linéaire sur la grille de la référence ; courbes non
+    superposables en Plotly (repli image) exclues.
 - **Tags & recherche** : étiquetez les figures et filtrez par titre ou tag.
 - **Persistance** : les figures (et leurs tags) réapparaissent après un Reload
   Window — pile propre à chaque workspace.
@@ -136,6 +141,7 @@ panneau. Aucune dépendance Python hors matplotlib/numpy.
 
 ```bash
 python test/test_convert.py    # tests d'assertion du convertisseur (unittest)
+node test/test_error_curves.js   # calcul d'erreur entre courbes (assertions)
 node --check extension.js storage.js
 ```
 
