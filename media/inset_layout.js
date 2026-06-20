@@ -64,7 +64,7 @@
           candidates.push({
             xDomain: [x0, x1], yDomain: [y0, y1],
             x0: x0, x1: x1, y0: y0, y1: y1,
-            outerXDomain: xDomain, outerYDomain: yDomain,
+            outerXDomain: xDomain.slice(), outerYDomain: yDomain.slice(),
             sizeIndex: sizeIndex,
             cornerKind: (touchesX ? 1 : 0) + (touchesY ? 1 : 0)
           });
