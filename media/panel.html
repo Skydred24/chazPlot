@@ -220,6 +220,19 @@
   .error-panel .error-types{ display:flex; gap:10px; flex-wrap:wrap; }
   .error-panel select{ margin-left:4px; }
   .error-warn{ color: var(--vscode-charts-yellow, #cca700); font-size:11px; }
+    .inset-overlay {
+      position: absolute; box-sizing: border-box; z-index: 5;
+      cursor: move; background: transparent; touch-action: none;
+    }
+    .inset-handle {
+      position: absolute; width: 12px; height: 12px; box-sizing: border-box;
+      background: #fff; border: 2px solid rgba(55,148,255,0.95);
+      border-radius: 2px; touch-action: none;
+    }
+    .inset-handle-nw { left: -6px; top: -6px; cursor: nwse-resize; }
+    .inset-handle-ne { right: -6px; top: -6px; cursor: nesw-resize; }
+    .inset-handle-sw { left: -6px; bottom: -6px; cursor: nesw-resize; }
+    .inset-handle-se { right: -6px; bottom: -6px; cursor: nwse-resize; }
 </style>
 </head>
 <body class="fit">
@@ -886,47 +899,98 @@
     return out;
   }
 
-  // Drag/resize de la bordure d'inset : lit les nouvelles bornes paper du
-  // shape editable, borne le placement, et reconstruit l'inset. Renvoie true
-  // si l'update concernait bien la bordure.
-  function handleInsetDrag(el, update){
-    const bi = el._spInsetBorderIndex;
-    if (bi == null){ return false; }
-    const cur = (el.layout && Array.isArray(el.layout.shapes) && el.layout.shapes[bi]) || {};
-    const rect = {};
-    let touched = false;
-    ["x0", "x1", "y0", "y1"].forEach(function(k){
-      const key = "shapes[" + bi + "]." + k;
-      if (update[key] !== undefined){ rect[k] = Number(update[key]); touched = true; }
-      else { rect[k] = Number(cur[k]); }
+  // ----------------------------------------------------------
+  // Overlay HTML de l'encart : corps = deplacer, 4 coins = redimensionner.
+  // C'est l'overlay (pas Plotly) qui capte les pointer events -> pas de
+  // re-entrance plotly_relayout. La bordure visible reste une shape Plotly.
+  // ----------------------------------------------------------
+  const INSET_MIN_SIZE = 0.12;
+  const INSET_CORNERS = ["nw", "ne", "sw", "se"];
+
+  function mountInsetOverlay(el){
+    if (el._spInsetOverlay){ return el._spInsetOverlay; }
+    const wrap = el.parentElement;
+    if (!wrap){ return null; }
+    if (getComputedStyle(wrap).position === "static"){ wrap.style.position = "relative"; }
+    const overlay = document.createElement("div");
+    overlay.className = "inset-overlay";
+    overlay.addEventListener("pointerdown", function(ev){
+      if (ev.target !== overlay){ return; }      // une poignee gere son resize
+      startInsetDrag(el, ev, InsetLayout.movePlacement);
     });
-    if (!touched){ return false; }
-    // le drag peut inverser les bornes
-    const nrect = {
-      x0: Math.min(rect.x0, rect.x1), x1: Math.max(rect.x0, rect.x1),
-      y0: Math.min(rect.y0, rect.y1), y1: Math.max(rect.y0, rect.y1)
-    };
+    INSET_CORNERS.forEach(function(corner){
+      const h = document.createElement("div");
+      h.className = "inset-handle inset-handle-" + corner;
+      h.addEventListener("pointerdown", function(ev){
+        startInsetDrag(el, ev, function(p, dx, dy){
+          return InsetLayout.resizePlacement(p, corner, dx, dy, INSET_MIN_SIZE);
+        });
+      });
+      overlay.appendChild(h);
+    });
+    wrap.appendChild(overlay);
+    el._spInsetOverlay = overlay;
+    return overlay;
+  }
+
+  function positionInsetOverlay(el){
+    const overlay = el._spInsetOverlay;
+    const placement = el._spInsetPlacement;
+    const size = el._fullLayout && el._fullLayout._size;
+    if (!overlay || !placement || !size){ return; }
+    const box = InsetLayout.paperRectToPixels(placement, size);
+    overlay.style.left = (el.offsetLeft + box.left) + "px";
+    overlay.style.top = (el.offsetTop + box.top) + "px";
+    overlay.style.width = box.width + "px";
+    overlay.style.height = box.height + "px";
+    overlay.style.display = el._spInsetActive ? "none" : "block";
+  }
+
+  function unmountInsetOverlay(el){
+    const overlay = el._spInsetOverlay;
+    if (overlay && overlay.parentElement){ overlay.parentElement.removeChild(overlay); }
+    el._spInsetOverlay = null;
+  }
+
+  // pointerdown -> drag : `transform(startPlacement, dxPaper, dyPaper)` produit
+  // le placement brut, borne ensuite par clampPlacement.
+  function startInsetDrag(el, ev, transform){
+    if (el._spInsetActive){ return; }            // arming d'une zone : ne pas gener
     const sel = el._spInsetSelection;
-    if (!sel){ return false; }
+    const size = el._fullLayout && el._fullLayout._size;
+    const startPlacement = el._spInsetPlacement;
+    if (!sel || !size || !startPlacement){ return; }
+    ev.preventDefault();
+    ev.stopPropagation();
+    const target = ev.currentTarget;
+    try { target.setPointerCapture(ev.pointerId); } catch (e) {}
+    const startX = ev.clientX, startY = ev.clientY;
     const baseLayout = el._spBaseLayout || {};
-    const xAxis = baseLayout[sel.xaxisKey] || {};
-    const yAxis = baseLayout[sel.yaxisKey] || {};
-    const xDomain = Array.isArray(xAxis.domain) ? xAxis.domain : [0.08, 0.96];
-    const yDomain = Array.isArray(yAxis.domain) ? yAxis.domain : [0.12, 0.94];
-    const placement = InsetLayout.clampPlacement(nrect, xDomain, yDomain, 0.12);
-    // Idempotence : si le placement borne est inchange (ex. relayout reemis par
-    // Plotly.react avec les memes coordonnees), ne rien reconstruire -> casse
-    // toute cascade re-entrante depuis le listener relayout.
-    const prev = el._spInsetPlacement;
-    if (prev &&
-        Math.abs(prev.xDomain[0] - placement.xDomain[0]) < 1e-6 &&
-        Math.abs(prev.xDomain[1] - placement.xDomain[1]) < 1e-6 &&
-        Math.abs(prev.yDomain[0] - placement.yDomain[0]) < 1e-6 &&
-        Math.abs(prev.yDomain[1] - placement.yDomain[1]) < 1e-6){
-      return false;
+    const xDomain = (baseLayout[sel.xaxisKey] || {}).domain || [0.08, 0.96];
+    const yDomain = (baseLayout[sel.yaxisKey] || {}).domain || [0.12, 0.94];
+    let raf = null, pending = null;
+    function onMove(e){
+      pending = e;
+      if (raf){ return; }
+      raf = requestAnimationFrame(function(){
+        raf = null;
+        const d = InsetLayout.pixelDeltaToPaper(pending.clientX - startX, pending.clientY - startY, size);
+        const next = transform(startPlacement, d.dx, d.dy);
+        const placement = InsetLayout.clampPlacement(
+          { x0: next.xDomain[0], x1: next.xDomain[1], y0: next.yDomain[0], y1: next.yDomain[1] },
+          xDomain, yDomain, INSET_MIN_SIZE);
+        applyZoomInset(el, sel, placement);
+        positionInsetOverlay(el);
+      });
     }
-    applyZoomInset(el, sel, placement);
-    return true;
+    function onUp(e){
+      target.removeEventListener("pointermove", onMove);
+      target.removeEventListener("pointerup", onUp);
+      try { target.releasePointerCapture(e.pointerId); } catch (err) {}
+      if (raf){ cancelAnimationFrame(raf); raf = null; }
+    }
+    target.addEventListener("pointermove", onMove);
+    target.addEventListener("pointerup", onUp);
   }
 
   function applyZoomInset(el, selection, placementOverride){
@@ -964,9 +1028,8 @@
       y0: placement.yDomain[0], y1: placement.yDomain[1],
       fillcolor: "rgba(255,255,255,0)",
       line: { color: "rgba(55,148,255,0.95)", width: 2 },
-      editable: true
+      editable: false
     });
-    el._spInsetBorderIndex = shapes.length - 1;
     baseLayout.shapes = shapes;
     const annotations = insetAnnotations(baseLayout, selection, placement, insetXRef, insetYRef);
     if (annotations.length){
@@ -978,10 +1041,9 @@
     el._spHasInset = true;
     markZoomInsetButton(el);
     const baseConfig = el._spConfig || plotlyConfig(el._spFig || {});
-    const insetConfig = Object.assign({}, baseConfig, {
-      edits: Object.assign({}, baseConfig.edits, { shapePosition: true })
-    });
-    Plotly.react(el, baseData.concat(additions), baseLayout, insetConfig);
+    Plotly.react(el, baseData.concat(additions), baseLayout, baseConfig);
+    mountInsetOverlay(el);
+    requestAnimationFrame(function(){ positionInsetOverlay(el); });
   }
 
   function clearZoomInset(el){
@@ -990,8 +1052,8 @@
     if (!el._spHasInset){ return; }
     el._spHasInset = false;
     el._spInsetSelection = null;
-    el._spInsetBorderIndex = null;
     el._spInsetPlacement = null;
+    unmountInsetOverlay(el);
     markZoomInsetButton(el);
     Plotly.react(el, clone(el._spBaseData || []), baseLayoutForPlot(el), el._spConfig || plotlyConfig(el._spFig || {}));
   }
@@ -1014,6 +1076,7 @@
     const dragUpdate = {};
     if (state.previousDragmode === undefined){ dragUpdate.dragmode = null; }
     else { dragUpdate.dragmode = state.previousDragmode; }
+    if (el._spInsetOverlay){ positionInsetOverlay(el); }
     try { Plotly.relayout(el, dragUpdate); } catch (e) {}
   }
 
@@ -1027,6 +1090,7 @@
     if (wrap){ wrap.classList.add("inset-armed"); }
     if (coordsEl){ coordsEl.textContent = "Trace une zone a agrandir"; }
     markZoomInsetButton(el);
+    if (el._spInsetOverlay){ el._spInsetOverlay.style.display = "none"; }
     Plotly.relayout(el, { dragmode: "zoom" });
   }
 
@@ -1093,11 +1157,6 @@
     Plotly.newPlot(el, data, layout, config);
     if (el.on){
       el.on("plotly_relayout", function(update){
-        // 1. Drag/resize d'un inset existant (bordure editable)
-        if (!el._spInsetActive && el._spHasInset){
-          handleInsetDrag(el, update);
-          return;
-        }
         // 2. Capture de la zone a zoomer (inset arme)
         if (!el._spInsetActive){ return; }
         const selection = parseZoomInsetSelection(update);
@@ -1127,7 +1186,11 @@
       for (let i = listPlots.length - 1; i >= 0; i--){
         const p = listPlots[i];
         if (!document.body.contains(p.el)){ listPlots.splice(i, 1); continue; }
-        try { Plotly.relayout(p.el, { height: listPlotHeight(p.el, p.fig) }); } catch (e) {}
+        try {
+          Plotly.relayout(p.el, { height: listPlotHeight(p.el, p.fig) }).then(function(){
+            if (p.el._spHasInset){ positionInsetOverlay(p.el); }
+          });
+        } catch (e) {}
       }
       if (compareOverlay.classList.contains("show")){ resizeComparePlots(); }
     }, 120);
