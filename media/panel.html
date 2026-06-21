@@ -340,6 +340,44 @@
   </div>
 
 <script nonce="{{nonce}}">
+// ============================================================================
+// UI du webview « Graphes ». Recoit les figures depuis extension.js et les rend.
+//
+// Modele de donnees
+//   figStore : { id -> fig }. Une `fig` = { id, title, ts, tags[], et UNE des
+//   representations : plotly {data,layout} | svg | png | frames[] (animation) }.
+//   Les figures arrivent par window 'message' (voir la section « Messages depuis
+//   l'extension » en bas) ; protocole detaille dans CLAUDE.md.
+//
+// Trois surfaces de rendu (toutes passent par les memes briques) :
+//   - Liste de cartes      : makeCard -> renderPlotly / createPlayer / <img>
+//   - Overlay « agrandir » : openOverlay (re-rend en grand, vectoriel)
+//   - Comparaison          : openCompare (grille cote-a-cote OU superposition,
+//                            + sous-graphe d'erreur via mergedPlotlyFigureWithErrors)
+//
+// Modules purs charges a part (testes sous node, voir test/) :
+//   - error_math.js  (ErrorMath)  : calcul des courbes d'erreur
+//   - inset_layout.js (InsetLayout): placement/geometrie de l'encart de zoom
+//   - plot_nav.js    (PlotNav)    : math du zoom molette / pan clic-milieu
+//   Plotly.js est bundle (media/plotly.min.js).
+//
+// Fonctionnalites interactives -> ou regarder pour debugger :
+//   - Zoom-encart : bouton dedie dans la modebar (config.modeBarButtonsToAdd)
+//     arme `gd._spInsetArmed` ; le zoom suivant est capte dans plotly_relayout
+//     -> parseZoomInsetSelection -> applyZoomInset. Deplacement/resize = overlay
+//     HTML (startInsetDrag), pas Plotly.
+//   - Courbes d'erreur : openErrorPanel -> mergedPlotlyFigureWithErrors.
+//   - Zoom molette / pan clic-milieu : attachPlotNav.
+//
+// Pieges (lire avant de modifier) :
+//   - On lit des internes Plotly : `el._fullLayout` (axes : _offset, _length,
+//     range, r2l/l2r). Sensible a la version (Plotly 3.6.0 ici).
+//   - Etat par-graphe stocke sur l'element DOM : `el._spFig`, `el._spBaseData`,
+//     `el._spBaseLayout`, `el._spConfig`, `el._spHasInset`, `el._spInsetArmed`.
+//   - CSP du webview : aucun reseau (pas de fetch). Tout est inline/bundle.
+//   - Les icones custom de la modebar peuvent subir un flip vertical (quirk
+//     Plotly) ; choisir des formes qui restent lisibles retournees.
+// ============================================================================
 (function(){
   "use strict";
   const vscodeApi = acquireVsCodeApi();
@@ -619,6 +657,19 @@
   // ----------------------------------------------------------
   // Rendu Plotly
   // ----------------------------------------------------------
+  //
+  // Vocabulaire commun aux helpers ci-dessous (zoom-encart) :
+  //   - kind   : "x" ou "y".
+  //   - ref    : reference d'axe cote trace, ex. "x", "y", "y2" (trace.xaxis).
+  //   - key    : nom de l'axe cote layout, ex. "xaxis", "yaxis", "yaxis2".
+  //              axisKeyFromRef / axisRefFromKey convertissent l'un en l'autre.
+  //   - domain : place de l'axe dans la figure, en coords « paper » 0..1.
+  //   - fullRange : etendue totale des donnees d'un axe (ou son range).
+  //   - paper  : repere normalise 0..1 de la figure (sert a poser l'encart).
+  //   - selection : zone tracee a agrandir { xaxisKey, yaxisKey, xRef, yRef,
+  //                 xRange, yRange } produite par parseZoomInsetSelection.
+  // Les dates passent par rangeNumber/pointNumber (ms) et les axes log par
+  // pointNumber (log10), pour que toute la geometrie reste lineaire.
 
   function axisKeyFromRef(ref, kind){
     ref = ref || kind;
@@ -758,6 +809,10 @@
 
   // Construit le contexte numerique (coordonnees paper, points convertis) et
   // delegue le choix de placement au module pur InsetLayout.
+  // Choisit l'emplacement de l'encart (domaine paper) : convertit donnees,
+  // annotations et zone selectionnee en rectangles paper, puis delegue le
+  // scoring a InsetLayout (prefere un coin vide). Repli sur un coin si la zone
+  // ne contient pas de donnees exploitables.
   function chooseInsetDomain(baseData, baseLayout, selection){
     const xAxis = baseLayout[selection.xaxisKey] || {};
     const yAxis = baseLayout[selection.yaxisKey] || {};
@@ -811,6 +866,9 @@
     return layout;
   }
 
+  // Lit un evenement plotly_relayout de zoom et en extrait la zone a agrandir
+  // (axes + ranges). Renvoie null si ce n'est pas un vrai rectangle de zoom
+  // (pan, autoscale, double-clic...). Voir l'appel dans renderPlotly.
   function parseZoomInsetSelection(update){
     const ranges = {};
     Object.keys(update || {}).forEach(function(key){
@@ -841,6 +899,9 @@
     };
   }
 
+  // Config d'un axe d'encart derivee de l'axe de base : cadre net (showline +
+  // mirror), sans grille, petits ticks, pour le domaine (place) et le range
+  // (zone zoomee) donnes.
   function insetAxis(baseAxis, domain, anchor, range){
     const axis = Object.assign({}, baseAxis || {});
     axis.domain = domain;
@@ -860,6 +921,8 @@
     return axis;
   }
 
+  // Copie les traces de la zone selectionnee et les reprojette sur les axes de
+  // l'encart (xRef/yRef), sans legende.
   function insetTraces(baseData, selection, xRef, yRef){
     return matchingAxisTraces(baseData, selection.xRef, selection.yRef).map(function(trace){
       const out = clone(trace);
@@ -1042,6 +1105,10 @@
     target.addEventListener("pointerup", onUp);
   }
 
+  // Cree (ou recree) l'encart : ajoute une paire d'axes + les traces zoomees +
+  // deux rectangles (zone source en pointilles, bordure de l'encart), re-rend
+  // via Plotly, puis monte l'overlay HTML de deplacement/resize. placementOverride
+  // est fourni pendant un drag/resize manuel ; sinon chooseInsetDomain decide.
   function applyZoomInset(el, selection, placementOverride){
     if (!el || !selection || typeof Plotly === "undefined"){ return; }
     const baseData = clone(el._spBaseData || []);
@@ -1241,7 +1308,12 @@
     config.modeBarButtonsToAdd = [{
       name: "zoomInset",
       title: "Zoom encart : cliquer pour armer, puis tracer une zone (re-clic = desarmer)",
-      icon: { width: 16, height: 16, path: "M6.4 2.2a4.2 4.2 0 1 0 2.5 7.6l3.2 3.2 1-1-3.2-3.2A4.2 4.2 0 0 0 6.4 2.2zm0 1.4a2.8 2.8 0 1 1 0 5.6 2.8 2.8 0 0 1 0-5.6zM5.1 5h2.6v2.6H5.1z" },
+      // Icone "picture-in-picture" : un cadre (rectangle exterieur evide par un
+      // rectangle interieur, regle de remplissage non-zero via sens de trace
+      // oppose) + un petit rectangle plein dans un coin = l'encart. Volontairement
+      // different de la loupe du zoom standard. Robuste au flip vertical des
+      // icones de la modebar Plotly (le coin reste un encart, en haut ou en bas).
+      icon: { width: 16, height: 16, path: "M2 3 L14 3 L14 13 L2 13 Z M3.4 4.4 L3.4 11.6 L12.6 11.6 L12.6 4.4 Z M8.4 8 L12.2 8 L12.2 11.2 L8.4 11.2 Z" },
       click: function(gd){
         gd._spInsetArmed = !gd._spInsetArmed;
         setInsetArmedFeedback(gd, coordsEl);
@@ -1504,6 +1576,11 @@
     });
   }
 
+  // Aplati les courbes scatter des figures comparees en une liste
+  // { key:"c0","c1"..., label, x[], y[] } pour ErrorMath. Exclut les barres et
+  // les lignes de reference verticales (axvline). L'ORDRE fixe les cles c0,c1...
+  // -> rappeler flattenCurves sur le MEME jeu que populateErrorRef pour que
+  // refKey corresponde.
   function flattenCurves(figs){
     const curves = [];
     let idx = 0;
@@ -1598,6 +1675,9 @@
     Plotly.Plots.resize(el);
   });
 
+  // Prepare une trace pour la superposition : la prefixe du label de sa figure
+  // (compareLabel) et, pour les figures secondaires (index>0), la rend plus
+  // discrete (opacite + style de ligne pointille) pour distinguer les sources.
   function overlayTrace(trace, label, index){
     const out = clone(trace);
     const secondary = index > 0;
@@ -1618,6 +1698,9 @@
     return out;
   }
 
+  // Fusionne plusieurs figures en UNE figure Plotly superposee sur un seul
+  // couple d'axes (x, y) : repart des axes/annotations de la 1re, empile les
+  // traces de toutes via overlayTrace. Base de la vue « Superposer ».
   function mergedPlotlyFigure(figs){
     const first = figs[0];
     const layout = clone((first.plotly && first.plotly.layout) || {});
@@ -1658,6 +1741,10 @@
     return typeIds.length > 0 && typeIds.every(function(t){ return t === "relpct"; });
   }
 
+  // Superposition + sous-graphe d'erreur empile dessous : courbe(s) d'ecart par
+  // rapport a la reference refKey, pour les types coches (typeIds : signed/abs/
+  // rel/relpct ; calcul dans ErrorMath). Le panneau du haut garde (x, y), le
+  // bas reutilise x et ajoute yaxis2. Voir openErrorPanel pour l'orchestration.
   function mergedPlotlyFigureWithErrors(figs, refKey, typeIds){
     const base = mergedPlotlyFigure(figs);      // superposition sur (x, y)
     const layout = base.plotly.layout;
