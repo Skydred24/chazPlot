@@ -60,6 +60,11 @@
           "default": "png",
           "description": "Format proposé par défaut pour Enregistrer / Tout enregistrer."
         },
+        "chazPlots.includePdf": {
+          "type": "boolean",
+          "default": true,
+          "description": "Générer aussi un PDF vectoriel (rendu matplotlib natif) pour chaque figure : permet la sauvegarde en PDF et l'inclut dans le « Bundle publication ». Désactivez pour alléger le rendu et la persistance si vous n'exportez jamais en PDF."
+        },
         "chazPlots.autoReveal": {
           "type": "boolean",
           "default": true,

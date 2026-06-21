@@ -174,6 +174,7 @@ function injectEnvironment(port) {
   env.replace("VSCODE_PLOTS_DPI", String(cfg.get("dpi", 200)));
   env.replace("VSCODE_PLOTS_ANIM_DPI", String(cfg.get("animationDpi", 130)));
   env.replace("VSCODE_PLOTS_ANIM_MAX_FRAMES", String(cfg.get("animationMaxFrames", 600)));
+  env.replace("VSCODE_PLOTS_PDF", cfg.get("includePdf", true) ? "1" : "0");
   env.prepend("PYTHONPATH", pyDir + path.delimiter);
 }
 
@@ -191,8 +192,11 @@ function addFigure(data) {
     pgf: typeof data.pgf === "string" && data.pgf.length > 0 ? data.pgf : null,
     svg: typeof data.svg === "string" && data.svg.length > 0 ? data.svg : null,
     png: typeof data.png === "string" && data.png.length > 0 ? data.png : null,
+    pdf: typeof data.pdf === "string" && data.pdf.length > 0 ? data.pdf : null,
     frames: hasFrames ? data.frames : null,
     interval: hasFrames ? Number(data.interval) || 100 : null,
+    render: data.render && typeof data.render === "object" ? data.render : null,
+    provenance: data.provenance && typeof data.provenance === "object" ? data.provenance : null,
     title: data.title ? String(data.title) : "Figure " + String(nextId),
     tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
     ts: new Date().toLocaleTimeString()
@@ -271,12 +275,17 @@ function defaultName(fig, ext) {
 function writeFigure(fig, filePath, frameIndex) {
   // le format est deduit de l'extension du chemin choisi
   const wantSvg = filePath.toLowerCase().endsWith(".svg");
+  const wantPdf = filePath.toLowerCase().endsWith(".pdf");
   // Animation : on enregistre la frame demandee (ou la premiere) en PNG.
   if (fig.frames) {
     let idx = typeof frameIndex === "number" ? frameIndex : 0;
     if (idx < 0 || idx >= fig.frames.length) { idx = 0; }
-    const outPath = wantSvg ? filePath.replace(/\.svg$/i, ".png") : filePath;
+    const outPath = (wantSvg || wantPdf) ? filePath.replace(/\.(svg|pdf)$/i, ".png") : filePath;
     fs.writeFileSync(outPath, Buffer.from(fig.frames[idx], "base64"));
+    return true;
+  }
+  if (wantPdf && fig.pdf !== null) {
+    fs.writeFileSync(filePath, Buffer.from(fig.pdf, "base64"));
     return true;
   }
   if (wantSvg && fig.svg !== null) {
@@ -313,11 +322,18 @@ function writeDataUrl(filePath, dataUrl) {
 }
 
 async function plotlyExportOptions(fig) {
-  const formatPick = await vscode.window.showQuickPick([
+  const choices = [
     { label: "PNG", description: "raster, qualite controlee par le DPI", value: "png" },
     { label: "SVG", description: "vectoriel, recommande pour Word/Pandoc", value: "svg" }
-  ], { placeHolder: "Format d'export" });
+  ];
+  // PDF disponible : rendu matplotlib natif (fidele, vectoriel) deja recu.
+  if (fig && fig.pdf) {
+    choices.push({ label: "PDF", description: "vectoriel matplotlib, ideal publication/LaTeX", value: "pdf" });
+  }
+  const formatPick = await vscode.window.showQuickPick(choices, { placeHolder: "Format d'export" });
   if (!formatPick) { return null; }
+  // Le PDF est ecrit directement depuis fig.pdf (pas d'export via le webview).
+  if (formatPick.value === "pdf") { return { format: "pdf" }; }
 
   let dpi = null;
   let scale = 1;
@@ -365,6 +381,21 @@ async function saveOne(id, frameIndex) {
   if (fig.plotly && !fig.frames) {
     const options = await plotlyExportOptions(fig);
     if (!options) { return; }
+    // PDF : ecriture directe du rendu matplotlib, sans passer par le webview.
+    if (options.format === "pdf") {
+      const uri = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file(path.join(workspaceDir(), defaultName(fig, "pdf"))),
+        filters: { "PDF (vectoriel)": ["pdf"] }
+      });
+      if (!uri) { return; }
+      try {
+        fs.writeFileSync(uri.fsPath, Buffer.from(fig.pdf, "base64"));
+        vscode.window.showInformationMessage("Figure enregistree : " + uri.fsPath);
+      } catch (err) {
+        vscode.window.showErrorMessage("Chaz Plots : echec de l'enregistrement PDF (" + String(err) + ")");
+      }
+      return;
+    }
     const uri = await vscode.window.showSaveDialog({
       defaultUri: vscode.Uri.file(path.join(workspaceDir(), defaultName(fig, options.format))),
       filters: options.format === "svg"
@@ -385,9 +416,11 @@ async function saveOne(id, frameIndex) {
 
   const cfg = vscode.workspace.getConfiguration("chazPlots");
   const ext = fig.frames ? "png" : cfg.get("saveFormat", "png");
+  const filters = { "Image PNG": ["png"], "Image SVG (vectoriel)": ["svg"] };
+  if (!fig.frames && fig.pdf) { filters["PDF (vectoriel)"] = ["pdf"]; }
   vscode.window.showSaveDialog({
     defaultUri: vscode.Uri.file(path.join(workspaceDir(), defaultName(fig, ext))),
-    filters: { "Image PNG": ["png"], "Image SVG (vectoriel)": ["svg"] }
+    filters: filters
   }).then(function (uri) {
     if (!uri) { return; }
     try {
@@ -416,6 +449,61 @@ function finishPlotlyExport(msg) {
     vscode.window.showErrorMessage("Chaz Plots : echec de l'ecriture de l'export (" + String(err) + ")");
   }
 }
+// Export CSV des donnees visibles d'une figure. Le webview detient la figure
+// vivante (zoom, traces) ; il construit le CSV (cf. csv_export.js) et l'envoie
+// via le message saveCsv. Ici on ne fait que choisir le fichier et l'ecrire.
+// BOM UTF-8 ajoute pour qu'Excel detecte l'encodage.
+function saveCsv(msg) {
+  if (!msg || typeof msg.csv !== "string") { return; }
+  const fig = figures.find(function (f) { return f.id === msg.id; });
+  const base = fig ? defaultName(fig, "csv") : "donnees.csv";
+  vscode.window.showSaveDialog({
+    defaultUri: vscode.Uri.file(path.join(workspaceDir(), base)),
+    filters: { "CSV": ["csv"] }
+  }).then(function (uri) {
+    if (!uri) { return; }
+    try {
+      fs.writeFileSync(uri.fsPath, "﻿" + msg.csv, "utf8");
+      vscode.window.showInformationMessage("Donnees exportees : " + uri.fsPath);
+    } catch (err) {
+      vscode.window.showErrorMessage("Chaz Plots : echec de l'export CSV (" + String(err) + ")");
+    }
+  });
+}
+
+// Export "bundle publication" : un dossier <base>/ contenant figure.png,
+// figure.svg, metadata.json et figure.tex. Le webview assemble images +
+// textes (cf. exportBundle) ; ici on choisit l'emplacement et on ecrit. Les
+// noms de fichiers sont reduits a leur basename (anti-traversee de chemin).
+function saveBundle(msg) {
+  if (!msg || !Array.isArray(msg.files) || msg.files.length === 0) { return; }
+  const base = String(msg.base || "figure").replace(/[^a-zA-Z0-9_\-]/g, "_") || "figure";
+  vscode.window.showOpenDialog({
+    canSelectFiles: false,
+    canSelectFolders: true,
+    canSelectMany: false,
+    openLabel: "Creer le bundle ici"
+  }).then(function (uris) {
+    if (!uris || uris.length === 0) { return; }
+    const dir = path.join(uris[0].fsPath, base);
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      msg.files.forEach(function (f) {
+        if (!f || !f.name) { return; }
+        const target = path.join(dir, path.basename(String(f.name)));
+        if (f.kind === "text") {
+          fs.writeFileSync(target, String(f.text || ""), "utf8");
+        } else if (typeof f.dataUrl === "string") {
+          writeDataUrl(target, f.dataUrl);
+        }
+      });
+      vscode.window.showInformationMessage("Bundle publication cree : " + dir);
+    } catch (err) {
+      vscode.window.showErrorMessage("Chaz Plots : echec du bundle (" + String(err) + ")");
+    }
+  });
+}
+
 // Export LaTeX PGF/TikZ. NB : le backend ne genere plus de PGF (fig.pgf est
 // toujours null aujourd'hui), donc ces chemins sont inactifs et le webview
 // n'affiche pas le bouton. Conserves au cas ou le PGF reviendrait.
@@ -518,6 +606,14 @@ function setupPanel(p) {
     else if (msg.type === "copyPgf") { copyPgf(msg.id); }
     else if (msg.type === "savePgf") { savePgf(msg.id); }
     else if (msg.type === "exportResult") { finishPlotlyExport(msg); }
+    else if (msg.type === "saveCsv") { saveCsv(msg); }
+    else if (msg.type === "saveBundle") { saveBundle(msg); }
+    else if (msg.type === "notify") {
+      const text = String(msg.text || "");
+      if (msg.level === "warn") { vscode.window.showWarningMessage(text); }
+      else if (msg.level === "error") { vscode.window.showErrorMessage(text); }
+      else { vscode.window.showInformationMessage(text); }
+    }
     else if (msg.type === "updateTags") { updateTags(msg.id, msg.tags); }
     else if (msg.type === "editTags") { editTags(msg.id); }
     else if (msg.type === "saveAll") { saveAll(); }
@@ -592,6 +688,21 @@ function webviewHtml(webview) {
   const plotNavUri = webview.asWebviewUri(
     vscode.Uri.file(path.join(extContext.extensionPath, "media", "plot_nav.js"))
   );
+  const measureMathUri = webview.asWebviewUri(
+    vscode.Uri.file(path.join(extContext.extensionPath, "media", "measure_math.js"))
+  );
+  const csvExportUri = webview.asWebviewUri(
+    vscode.Uri.file(path.join(extContext.extensionPath, "media", "csv_export.js"))
+  );
+  const compareUtilUri = webview.asWebviewUri(
+    vscode.Uri.file(path.join(extContext.extensionPath, "media", "compare_util.js"))
+  );
+  const bundleMetaUri = webview.asWebviewUri(
+    vscode.Uri.file(path.join(extContext.extensionPath, "media", "bundle_meta.js"))
+  );
+  const figureFilterUri = webview.asWebviewUri(
+    vscode.Uri.file(path.join(extContext.extensionPath, "media", "figure_filter.js"))
+  );
   const htmlPath = path.join(extContext.extensionPath, "media", "panel.html");
   let template = null;
   try {
@@ -606,7 +717,12 @@ function webviewHtml(webview) {
       .replace(/{{plotlyUri}}/g, String(plotlyUri))
       .replace(/{{errorMathUri}}/g, String(errorMathUri))
       .replace(/{{insetLayoutUri}}/g, String(insetLayoutUri))
-      .replace(/{{plotNavUri}}/g, String(plotNavUri));
+      .replace(/{{plotNavUri}}/g, String(plotNavUri))
+      .replace(/{{measureMathUri}}/g, String(measureMathUri))
+      .replace(/{{csvExportUri}}/g, String(csvExportUri))
+      .replace(/{{compareUtilUri}}/g, String(compareUtilUri))
+      .replace(/{{bundleMetaUri}}/g, String(bundleMetaUri))
+      .replace(/{{figureFilterUri}}/g, String(figureFilterUri));
   }
   // media/panel.html introuvable : l'extension est mal installee.
   return [
