@@ -1,0 +1,25 @@
+# Ce qui NE doit PAS partir dans le .vsix (on ne garde que le runtime :
+# extension.js, storage.js, media/, python/, package.json, readme.md).
+
+# Brouillons de travail et docs internes
+.superpowers/**
+docs/**
+.claude/**
+
+# Outillage / config dev
+.vscode/**
+.gitignore
+.gitattributes
+.git/**
+**/.DS_Store
+
+# Tests et doc destinee aux contributeurs (inutiles a l'execution)
+test/**
+CLAUDE.md
+
+# Artefacts Python
+**/__pycache__/**
+**/*.py[cod]
+
+# Ne pas empaqueter un .vsix dans le .vsix
+*.vsix
