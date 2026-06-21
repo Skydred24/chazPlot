@@ -18,6 +18,10 @@ lecteur intégré, et tout est **persisté** d'une session à l'autre.
   double-clic pour réinitialiser. Repli automatique en **SVG** (toujours net)
   pour les figures non convertibles, et **PNG** haute résolution toujours
   généré pour l'enregistrement.
+- **Navigation à la souris** : **Ctrl/Cmd + molette** zoome autour du curseur,
+  **clic-molette (bouton du milieu) maintenu** fait un pan. Fonctionne aussi sur
+  les axes log et date, les sous-graphes, l'axe `twinx` et le sous-graphe
+  d'erreur.
 - **Cartes de champ** : `imshow`, `pcolormesh` et nuages de points colorés
   conservent leur **colorbar avec son titre/unité** (le label passé à
   `colorbar(..., label=…)` est repris).
@@ -26,8 +30,10 @@ lecteur intégré, et tout est **persisté** d'une session à l'autre.
   barre de navigation, vitesse 0.25×–4×.
 - **Agrandir** : overlay plein panneau qui re-rend en vectoriel (net à toute
   taille), avec redimensionnement automatique.
-- **Zoom encarté** : sélectionnez une zone et affichez-la en encart sur
-  le graphe original, en plus du zoom Plotly standard.
+- **Zoom encarté** : armez le bouton dédié de la modebar puis tracez une zone —
+  elle s'affiche en encart sur le graphe original (en plus du zoom Plotly
+  standard). L'encart se **déplace** (corps) et se **redimensionne** (poignées de
+  coin) ; **clic droit** pour l'effacer. Marche aussi en mode comparaison.
 - **Mesures** : bouton « règle » de la modebar, puis deux clics figent deux
   curseurs A et B. Lecture immédiate de Δx, Δy et **pente** ; si les deux
   points sont sur la même courbe, **aire sous la courbe** (trapèzes) et
@@ -71,14 +77,14 @@ lecteur intégré, et tout est **persisté** d'une session à l'autre.
 
 ### Paquet .vsix (recommandé)
 ```bash
-npx @vscode/vsce package          # produit chaz-plots-0.5.0.vsix
-code --install-extension chaz-plots-0.5.0.vsix
+npx @vscode/vsce package          # produit chaz-plots-0.7.0.vsix
+code --install-extension chaz-plots-0.7.0.vsix
 ```
 
 ### Sans droits administrateur (Windows)
 Aucune compilation, aucun `npm install` (extension en JavaScript pur) :
 1. Copiez le dossier dans
-   `%USERPROFILE%\.vscode\extensions\hugo.chaz-plots-0.5.0`.
+   `%USERPROFILE%\.vscode\extensions\hugo.chaz-plots-0.7.0`.
 2. Rechargez VS Code (`Ctrl+Shift+P` → « Reload Window »).
 3. Ouvrez un **nouveau terminal** (les variables d'environnement ne sont
    injectées que dans les terminaux créés après l'activation).
@@ -153,7 +159,15 @@ chaz-plots/
 ├── storage.js                           persistance des figures (disque + index)
 ├── media/
 │   ├── panel.html                       interface du panneau (UI + lecteur)
-│   └── plotly.min.js                    Plotly.js embarqué
+│   ├── plotly.min.js                    Plotly.js embarqué
+│   ├── plot_nav.js                      zoom molette + pan clic-milieu (pur)
+│   ├── error_math.js                    écart entre courbes (pur)
+│   ├── inset_layout.js                  placement/géométrie de l'encart (pur)
+│   ├── measure_math.js                  mesures : pente, aire, stats (pur)
+│   ├── csv_export.js                    export CSV tidy (pur)
+│   ├── compare_util.js                  zoom sync + sous-graphes (pur)
+│   ├── bundle_meta.js                   bundle publication (pur)
+│   └── figure_filter.js                 recherche + tri des figures (pur)
 ├── python/
 │   ├── vscode_spyder_plots_backend.py   backend matplotlib (module://)
 │   └── _mpl_to_plotly.py                conversion figure → Plotly
@@ -169,7 +183,7 @@ Au démarrage, l'extension ouvre un serveur HTTP sur `127.0.0.1:53210` (ou le
 port libre suivant) et injecte dans les **nouveaux** terminaux :
 `MPLBACKEND=module://vscode_spyder_plots_backend`, `PYTHONPATH` += le dossier
 `python/`, `VSCODE_PLOTS_PORT`, `VSCODE_PLOTS_DPI`, `VSCODE_PLOTS_ANIM_DPI`,
-`VSCODE_PLOTS_ANIM_MAX_FRAMES`. À chaque `plt.show()`, le backend convertit la
+`VSCODE_PLOTS_ANIM_MAX_FRAMES`, `VSCODE_PLOTS_PDF`. À chaque `plt.show()`, le backend convertit la
 figure (Plotly → SVG → PNG, ou frames d'animation) et l'envoie en POST au
 panneau. Aucune dépendance Python hors matplotlib/numpy.
 
@@ -187,6 +201,22 @@ node test/test_inset_layout.js   # placement de l'encart de zoom
 node test/check_panel_html.js    # garde-fou structurel du webview
 node --check extension.js storage.js
 ```
+
+## Nouveautés v0.7.0
+
+- **Convertisseur** : `contour`/`contourf`, `quiver`, `twiny`, axes polaires
+  simples, `boxplot(patch_artist=True)`, légendes `bbox_to_anchor`, et **titres
+  de colorbar** (unités) pour `imshow`/`pcolormesh`/scatter coloré.
+- **Diagnostic de rendu** : badge par figure (interactif / SVG / PNG) avec la
+  raison du repli en infobulle.
+- **Mesures sur graphe** : deux curseurs → Δx, Δy, pente, aire et stats.
+- **Export CSV** des données visibles (respecte le zoom).
+- **Comparaison** : zoom synchronisé côte à côte, sous-graphes préservés,
+  référence d'erreur au clic.
+- **Bundle publication** + **export PDF** vectoriel (rendu matplotlib natif).
+- **Provenance** : script/ligne, env, git, date — affichée et exportée.
+- **Recherche/tri** élargis à la provenance ; tags cliquables.
+- **Navigation** : Ctrl/Cmd + molette (zoom), clic-milieu (pan).
 
 ## Nouveautés v0.5.0
 
