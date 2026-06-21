@@ -7,6 +7,11 @@
 <script src="{{errorMathUri}}"></script>
 <script src="{{insetLayoutUri}}"></script>
 <script src="{{plotNavUri}}"></script>
+<script src="{{measureMathUri}}"></script>
+<script src="{{csvExportUri}}"></script>
+<script src="{{compareUtilUri}}"></script>
+<script src="{{bundleMetaUri}}"></script>
+<script src="{{figureFilterUri}}"></script>
 <style>
   :root{
     color-scheme: light dark;
@@ -140,10 +145,32 @@
     background: var(--sp-accent-soft);
     color: var(--sp-text);
   }
+  /* Diagnostic de rendu : vert = interactif, ambre = repli SVG, gris = repli PNG */
+  .card-head .badge.render{ cursor: default; border:1px solid transparent; }
+  .card-head .badge.render-plotly{
+    background: color-mix(in srgb, var(--vscode-charts-green, #2ea043) 22%, transparent);
+    border-color: color-mix(in srgb, var(--vscode-charts-green, #2ea043) 45%, transparent);
+  }
+  .card-head .badge.render-svg{
+    background: color-mix(in srgb, var(--vscode-charts-yellow, #d7a318) 24%, transparent);
+    border-color: color-mix(in srgb, var(--vscode-charts-yellow, #d7a318) 50%, transparent);
+  }
+  .card-head .badge.render-png{
+    background: color-mix(in srgb, var(--vscode-charts-orange, #cc6633) 22%, transparent);
+    border-color: color-mix(in srgb, var(--vscode-charts-orange, #cc6633) 48%, transparent);
+  }
   .card-head .spacer{ flex:1; }
+  .prov{
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size:11px; color: var(--sp-text-dim);
+    padding:3px 10px 4px 34px; cursor:help;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
   .tagrow{ display:none; gap:5px; flex-wrap:wrap; padding:6px 10px 7px 34px; border-bottom:1px solid var(--sp-border); }
   .tagrow.show{ display:flex; }
   .tag{ font-size:10.5px; padding:2px 7px; border-radius:999px; color: var(--sp-text); background: var(--sp-accent-soft); border:1px solid var(--sp-border); }
+  .tag-click{ cursor:pointer; }
+  .tag-click:hover{ border-color: var(--sp-accent); }
   .card.filtered{ display:none; }
 
   .imgwrap{ background: var(--sp-plot-bg); text-align:center; padding:14px; }
@@ -154,6 +181,19 @@
   body.no-fit .imgwrap{ overflow-x:auto; }
   .plotwrap{ padding:6px; background: var(--sp-plot-bg); }
   .sp-inset-armed{ outline:2px dashed var(--sp-accent); outline-offset:-2px; }
+  .sp-measure-armed{ outline:2px dashed #ff5db1; outline-offset:-2px; }
+  /* Panneau de lecture des mesures (dx/dy/pente, aire, stats) */
+  .measure-readout{
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size:12px; line-height:1.55;
+    margin:0 8px 10px; padding:7px 10px;
+    border:1px solid var(--sp-border); border-radius:8px;
+    background: var(--sp-surface-2); color: var(--sp-text);
+    box-shadow: var(--sp-shadow-1);
+  }
+  .measure-readout .measure-row{ white-space:nowrap; font-variant-numeric: tabular-nums; }
+  .measure-readout .measure-row b{ color:#ff5db1; }
+  .measure-readout .measure-hint{ color: var(--sp-text-dim); font-style:italic; }
 
   /* ----- Lecteur d'animation ----- */
   .player{ background: var(--sp-plot-bg); }
@@ -281,7 +321,14 @@
   <div class="toolbar">
     <span class="brand"><span class="dot"></span>Graphes</span>
     <span class="count" id="count">0 graphe</span>
-    <input class="search" id="searchInput" type="search" placeholder="Filtrer titre ou tag" title="Filtrer les graphes par titre ou tag">
+    <input class="search" id="searchInput" type="search" placeholder="Filtrer titre, tag, script, commit…" title="Filtrer par titre, tag ou provenance (script, fonction, branche/commit git)">
+    <select class="compact" id="sortSelect" title="Trier les graphes">
+      <option value="arrival">Ordre d'arrivée</option>
+      <option value="title">Titre (A→Z)</option>
+      <option value="type">Type</option>
+      <option value="script">Script</option>
+      <option value="date">Date (récent)</option>
+    </select>
     <span class="spacer"></span>
     <span class="compare-status" id="compareStatus">0 selectionne</span>
     <span class="segmented">
@@ -324,7 +371,7 @@
       <span class="error-warn" id="errorWarn"></span>
     </div>
     <div class="error-panel" id="errorPanel" style="display:none">
-      <label>Reference :
+      <label title="Astuce : cliquez une courbe du graphe pour la choisir comme reference">Reference :
         <select id="errorRef"></select>
       </label>
       <span class="error-types">
@@ -450,9 +497,15 @@
   }
 
   function matchesSearch(fig){
-    const q = searchQuery.trim().toLowerCase();
-    if (!q){ return true; }
-    return (fig.title + " " + tagText(fig)).toLowerCase().indexOf(q) !== -1;
+    // Recherche elargie (titre + tags + provenance) via le module pur.
+    return FigureFilter.matchesQuery(fig, searchQuery);
+  }
+
+  // Clic sur un tag -> filtre sur ce tag (remplit la recherche).
+  function filterByText(text){
+    searchQuery = text;
+    if (searchInput){ searchInput.value = text; }
+    applySearchFilter();
   }
 
   function renderTags(card, fig){
@@ -462,8 +515,10 @@
     const tags = normalizeTags(fig.tags);
     tags.forEach(function(tag){
       const item = document.createElement("span");
-      item.className = "tag";
+      item.className = "tag tag-click";
       item.textContent = tag;
+      item.title = "Filtrer sur « " + tag + " »";
+      item.addEventListener("click", function(){ filterByText(tag); });
       row.appendChild(item);
     });
     row.classList.toggle("show", tags.length > 0);
@@ -474,6 +529,16 @@
       const fig = figStore[key];
       const card = document.getElementById("fig-" + key);
       if (card){ card.classList.toggle("filtered", !matchesSearch(fig)); }
+    });
+  }
+
+  // Tri des cartes : reordonne les noeuds DOM selon FigureFilter.sortFigures.
+  let sortMode = "arrival";
+  function applySort(){
+    const figs = Object.keys(figStore).map(function(key){ return figStore[key]; });
+    FigureFilter.sortFigures(figs, sortMode).forEach(function(fig){
+      const card = document.getElementById("fig-" + fig.id);
+      if (card){ list.appendChild(card); }   // appendChild deplace = reordonne
     });
   }
 
@@ -1111,6 +1176,9 @@
   // est fourni pendant un drag/resize manuel ; sinon chooseInsetDomain decide.
   function applyZoomInset(el, selection, placementOverride){
     if (!el || !selection || typeof Plotly === "undefined"){ return; }
+    // L'encart reconstruit la liste des traces (Plotly.react) : on solde l'etat
+    // de mesure pour ne pas garder un index de marqueur perime.
+    resetMeasureState(el);
     const baseData = clone(el._spBaseData || []);
     const baseLayout = baseLayoutForPlot(el);
     const additions = insetTraces(baseData, selection, "x", "y");
@@ -1161,6 +1229,7 @@
   function clearZoomInset(el){
     if (!el || typeof Plotly === "undefined"){ return; }
     if (!el._spHasInset){ return; }
+    resetMeasureState(el);
     el._spHasInset = false;
     el._spInsetSelection = null;
     el._spInsetPlacement = null;
@@ -1168,6 +1237,242 @@
     Plotly.react(el, clone(el._spBaseData || []), baseLayoutForPlot(el), el._spConfig || plotlyConfig(el._spFig || {}));
   }
 
+
+  // ----------------------------------------------------------
+  // Mode mesure : deux curseurs figes par clic -> Δx, Δy, pente, et (si les
+  // deux points sont sur la meme courbe) aire sous la courbe + min/max/moyenne
+  // sur la plage [xA, xB]. Maths pures dans measure_math.js (MeasureMath).
+  // Le marqueur est une trace scatter dediee ajoutee en derniere position ; le
+  // panneau de lecture est un overlay HTML sous le graphe. Mutuellement exclusif
+  // avec le mode encart (qui reconstruit la trace via Plotly.react).
+  // ----------------------------------------------------------
+  const MEASURE_COLOR = "#ff5db1";
+  function toNum(v){
+    if (typeof v === "number"){ return v; }
+    const t = Date.parse(v);
+    return isNaN(t) ? Number(v) : t;
+  }
+  function ensureMeasureReadout(el){
+    if (el._spReadout && el._spReadout.isConnected){ return el._spReadout; }
+    const box = document.createElement("div");
+    box.className = "measure-readout";
+    box.style.display = "none";
+    if (el.parentElement){ el.parentElement.appendChild(box); }
+    el._spReadout = box;
+    return box;
+  }
+  function resetMeasureState(el){
+    el._spMeasure = null;
+    el._spMeasureIdx = null;
+    if (el._spReadout){ el._spReadout.style.display = "none"; }
+  }
+  function setMeasureArmedFeedback(el){
+    if (el.parentElement){ el.parentElement.classList.toggle("sp-measure-armed", !!el._spMeasureArmed); }
+    const hasPts = !!(el._spMeasure && el._spMeasure.points && el._spMeasure.points.length);
+    const box = ensureMeasureReadout(el);
+    if (hasPts){ return; }  // le panneau de lecture reste affiche tant qu'il y a des points
+    if (el._spMeasureArmed){
+      box.style.display = "block";
+      box.innerHTML = "<span class='measure-hint'>Mode mesure : clique deux points (clic droit = effacer)</span>";
+    } else {
+      box.style.display = "none";
+    }
+  }
+  function armMeasure(el){
+    el._spMeasureArmed = !el._spMeasureArmed;
+    if (el._spMeasureArmed && el._spInsetArmed){
+      el._spInsetArmed = false;
+      setInsetArmedFeedback(el, el._spCoordsEl || null);
+    }
+    setMeasureArmedFeedback(el);
+  }
+  function measureTrace(points){
+    return {
+      type: "scatter", mode: "lines+markers+text",
+      x: points.map(function(p){ return p.rawx; }),
+      y: points.map(function(p){ return p.y; }),
+      text: points.map(function(p, i){ return i === 0 ? "A" : "B"; }),
+      textposition: "top center",
+      textfont: { color: MEASURE_COLOR, size: 12 },
+      marker: { size: 10, color: MEASURE_COLOR, symbol: "x-thin", line: { width: 2, color: MEASURE_COLOR } },
+      line: { color: MEASURE_COLOR, width: 1, dash: "dot" },
+      hoverinfo: "skip", showlegend: false,
+      xaxis: "x", yaxis: "y", _spMeasure: true
+    };
+  }
+  function drawMeasure(el){
+    const pts = (el._spMeasure && el._spMeasure.points) || [];
+    if (pts.length === 0){
+      if (el._spMeasureIdx != null){ try { Plotly.deleteTraces(el, el._spMeasureIdx); } catch(e){} el._spMeasureIdx = null; }
+      return;
+    }
+    const tr = measureTrace(pts);
+    if (el._spMeasureIdx == null){
+      // la trace de mesure occupe toujours la derniere position ; on fixe
+      // l'index de facon synchrone pour eviter une course entre deux clics.
+      el._spMeasureIdx = el.data.length;
+      Plotly.addTraces(el, tr);
+    } else {
+      Plotly.restyle(el, { x: [tr.x], y: [tr.y], text: [tr.text] }, [el._spMeasureIdx]);
+    }
+  }
+  function clearMeasure(el){
+    if (el._spMeasureIdx != null){ try { Plotly.deleteTraces(el, el._spMeasureIdx); } catch(e){} }
+    el._spMeasure = null;
+    el._spMeasureIdx = null;
+    setMeasureArmedFeedback(el);
+  }
+  function curveXY(el, cn){
+    const tr = el.data && el.data[cn];
+    if (!tr){ return null; }
+    return { x: (tr.x || []).map(toNum), y: (tr.y || []).map(Number) };
+  }
+  function addMeasurePoint(el, pt){
+    if (!pt || (pt.data && pt.data._spMeasure)){ return; }  // ignore un clic sur le marqueur
+    let pts = (el._spMeasure && el._spMeasure.points) || [];
+    if (pts.length >= 2){ pts = []; }   // un 3e clic repart d'un nouveau A
+    pts = pts.concat([{ rawx: pt.x, x: toNum(pt.x), y: Number(pt.y), cn: pt.curveNumber,
+                        name: (pt.data && pt.data.name) || null }]);
+    el._spMeasure = { points: pts };
+    drawMeasure(el);
+    updateMeasureReadout(el);
+  }
+  function updateMeasureReadout(el){
+    const box = ensureMeasureReadout(el);
+    const pts = (el._spMeasure && el._spMeasure.points) || [];
+    if (pts.length === 0){ setMeasureArmedFeedback(el); return; }
+    box.style.display = "block";
+    const a = pts[0];
+    let html = "<div class='measure-row'><b>A</b>  x " + fmtNum(a.x) + "   y " + fmtNum(a.y) + "</div>";
+    if (pts.length === 1){
+      box.innerHTML = html + "<div class='measure-hint'>clique un second point</div>";
+      return;
+    }
+    const b = pts[1];
+    html += "<div class='measure-row'><b>B</b>  x " + fmtNum(b.x) + "   y " + fmtNum(b.y) + "</div>";
+    const m = MeasureMath.segmentMetrics(a.x, a.y, b.x, b.y);
+    html += "<div class='measure-row'>Δx " + fmtNum(m.dx) + "   Δy " + fmtNum(m.dy) +
+            "   pente " + (m.slope == null ? "∞" : fmtNum(m.slope)) + "</div>";
+    if (a.cn === b.cn){
+      const xy = curveXY(el, a.cn);
+      if (xy){
+        const area = MeasureMath.areaUnderCurve(xy.x, xy.y, a.x, b.x);
+        const st = MeasureMath.rangeStats(xy.x, xy.y, a.x, b.x);
+        html += "<div class='measure-row'>aire ∫ " + fmtNum(area) + "</div>";
+        if (st.count){
+          html += "<div class='measure-row'>min " + fmtNum(st.min) + "   max " + fmtNum(st.max) +
+                  "   moy " + fmtNum(st.mean) + "   (n=" + st.count + ")</div>";
+        }
+      }
+    } else {
+      html += "<div class='measure-hint'>aire/stats : choisis deux points sur la meme courbe</div>";
+    }
+    box.innerHTML = html;
+  }
+
+  function attachMeasure(el){
+    if (!el || el._spMeasureBound){ return; }
+    el._spMeasureBound = true;
+    if (el.on){
+      el.on("plotly_click", function(ev){
+        if (!el._spMeasureArmed){ return; }
+        const pt = ev && ev.points && ev.points[0];
+        if (pt){ addMeasurePoint(el, pt); }
+      });
+    }
+    // Clic droit : efface les curseurs de mesure (n'intercepte que s'il y en a).
+    el.addEventListener("contextmenu", function(e){
+      if (el._spMeasure && el._spMeasure.points && el._spMeasure.points.length){
+        e.preventDefault();
+        clearMeasure(el);
+      }
+    });
+  }
+
+  // ----------------------------------------------------------
+  // Export CSV des donnees visibles. On lit les traces vivantes du graphe
+  // (el.data, qui reflete zoom/visibilite), on construit un CSV tidy via
+  // CsvExport, puis on delegue l'ecriture a l'extension (message saveCsv).
+  // ----------------------------------------------------------
+  // Plage X visible utilisable comme filtre : seulement si le graphe a un
+  // unique axe X numerique (sinon subplots/twin/date -> pas de filtre fiable).
+  function plotXRange(el){
+    const fl = el && el._fullLayout;
+    if (!fl){ return null; }
+    const xKeys = Object.keys(fl).filter(function(k){ return /^xaxis\d*$/.test(k); });
+    if (xKeys.length !== 1){ return null; }
+    const ax = fl[xKeys[0]];
+    if (!ax || !ax.range){ return null; }
+    const r0 = toNum(ax.range[0]), r1 = toNum(ax.range[1]);
+    if (!isFinite(r0) || !isFinite(r1)){ return null; }
+    return [r0, r1];
+  }
+  // Series exportables a partir des traces Plotly vivantes (hors marqueur de
+  // mesure). scatter/bar -> xy ; scatterpolar -> theta/r ; heatmap -> grille z.
+  function plotSeriesForCsv(el){
+    const out = [];
+    (el.data || []).forEach(function(tr, i){
+      if (tr._spMeasure){ return; }
+      const type = tr.type || "scatter";
+      const name = tr.name || ("courbe " + (i + 1));
+      if (type === "heatmap" && Array.isArray(tr.z)){
+        out.push({ name: name, x: tr.x || [], y: tr.y || [], z: tr.z });
+      } else if (type === "scatterpolar" && Array.isArray(tr.theta) && Array.isArray(tr.r)){
+        out.push({ name: name, x: tr.theta, y: tr.r });
+      } else if ((type === "scatter" || type === "bar") && Array.isArray(tr.x) && Array.isArray(tr.y)){
+        out.push({ name: name, x: tr.x, y: tr.y });
+      }
+    });
+    return out;
+  }
+  function exportCsv(el, fig){
+    if (!el || !el.data){ return; }
+    const series = plotSeriesForCsv(el);
+    if (series.length === 0){
+      vscodeApi.postMessage({ type: "notify", level: "warn",
+        text: "Chaz Plots : aucune donnee exportable en CSV pour cette figure." });
+      return;
+    }
+    const csv = CsvExport.buildCsv(series, { xRange: plotXRange(el) });
+    vscodeApi.postMessage({ type: "saveCsv", id: fig.id, csv: csv });
+  }
+
+  // ----------------------------------------------------------
+  // Bundle publication : un dossier figure.png + figure.svg + metadata.json
+  // + figure.tex (\includegraphics). Pour les figures Plotly, on rend les
+  // images via Plotly.toImage (le webview detient la figure vivante) ; sinon
+  // on reutilise les SVG/PNG deja recus. L'ecriture est faite par l'extension.
+  // ----------------------------------------------------------
+  async function exportBundle(el, fig){
+    const base = BundleMeta.sanitizeBase(fig.title, fig.id);
+    const files = [];
+    const formats = [];
+    try {
+      if (fig.plotly && el){
+        const png = await Plotly.toImage(el, { format: "png", scale: 2 });
+        files.push({ name: "figure.png", dataUrl: png }); formats.push("png");
+        const svg = await Plotly.toImage(el, { format: "svg" });
+        files.push({ name: "figure.svg", dataUrl: svg }); formats.push("svg");
+      } else {
+        if (fig.png){ files.push({ name: "figure.png", dataUrl: "data:image/png;base64," + fig.png }); formats.push("png"); }
+        if (fig.svg){ files.push({ name: "figure.svg", dataUrl: "data:image/svg+xml;base64," + fig.svg }); formats.push("svg"); }
+      }
+      // PDF vectoriel matplotlib (recu du backend) : ideal pour pdflatex/Overleaf.
+      if (fig.pdf){ files.push({ name: "figure.pdf", dataUrl: "data:application/pdf;base64," + fig.pdf }); formats.push("pdf"); }
+    } catch (e){
+      vscodeApi.postMessage({ type: "notify", level: "error",
+        text: "Chaz Plots : echec de la generation des images du bundle (" + e + ")" });
+      return;
+    }
+    if (files.length === 0){
+      vscodeApi.postMessage({ type: "notify", level: "warn",
+        text: "Chaz Plots : aucune image a empaqueter pour cette figure." });
+      return;
+    }
+    files.push({ name: "metadata.json", kind: "text", text: BundleMeta.buildMetadata(fig, { formats: formats }) });
+    files.push({ name: "figure.tex", kind: "text", text: BundleMeta.buildTex(base, fig.title || base) });
+    vscodeApi.postMessage({ type: "saveBundle", base: base, files: files });
+  }
 
   function plotlyConfig(fig){
     return {
@@ -1316,16 +1621,26 @@
       icon: { width: 16, height: 16, path: "M2 3 L14 3 L14 13 L2 13 Z M3.4 4.4 L3.4 11.6 L12.6 11.6 L12.6 4.4 Z M8.4 8 L12.2 8 L12.2 11.2 L8.4 11.2 Z" },
       click: function(gd){
         gd._spInsetArmed = !gd._spInsetArmed;
+        if (gd._spInsetArmed && gd._spMeasureArmed){ gd._spMeasureArmed = false; setMeasureArmedFeedback(gd); }
         setInsetArmedFeedback(gd, coordsEl);
       }
+    }, {
+      name: "mesure",
+      title: "Mesures : cliquer pour armer, puis cliquer deux points (Δx/Δy/pente, aire, stats ; clic droit = effacer)",
+      // Icone "regle graduee" : un cadre allonge avec des traits de graduation,
+      // distincte de la loupe et du cadre d'encart.
+      icon: { width: 16, height: 16, path: "M1 5 L15 5 L15 11 L1 11 Z M4 5 L4 8.5 M7 5 L7 9.5 M10 5 L10 8.5 M13 5 L13 9.5" },
+      click: function(gd){ armMeasure(gd); }
     }];
     el._spFig = fig;
+    el._spCoordsEl = coordsEl;
     el._spBaseData = clone(data);
     el._spBaseLayout = clone(layout);
     el._spConfig = config;
     el._spHasInset = false;
     Plotly.newPlot(el, data, layout, config);
     attachPlotNav(el);
+    attachMeasure(el);
     if (el.on){
       el.on("plotly_relayout", function(update){
         // Mode encart arme par Ctrl+clic sur la loupe : le trace de zoom
@@ -1367,6 +1682,60 @@
   // ----------------------------------------------------------
   // Carte
   // ----------------------------------------------------------
+  // Badge de diagnostic de rendu : indique si la figure est interactive
+  // (Plotly) ou pourquoi elle est retombee en image (SVG/PNG). La raison
+  // precise (artiste non gere, trop de points...) est en infobulle.
+  const RENDER_BADGES = {
+    plotly: { cls: "render-plotly", label: "INTERACTIF", tip: "Rendu Plotly interactif (zoom, survol, export données)" },
+    svg:    { cls: "render-svg",    label: "SVG",        tip: "Repli image vectorielle" },
+    png:    { cls: "render-png",    label: "PNG",        tip: "Repli image matricielle" },
+  };
+  function renderBadge(fig){
+    // Mode explicite envoye par le backend, sinon deduit des representations
+    // disponibles (figures persistees avant l'ajout du diagnostic).
+    let mode = fig.render && fig.render.mode;
+    if (!mode){ mode = fig.plotly ? "plotly" : (fig.svg ? "svg" : (fig.png ? "png" : null)); }
+    const meta = RENDER_BADGES[mode];
+    if (!meta){ return null; }
+    const badge = document.createElement("span");
+    badge.className = "badge render " + meta.cls;
+    badge.textContent = meta.label;
+    let tip = meta.tip;
+    if (fig.render && mode !== "plotly"){
+      const r = fig.render;
+      if (r.message){ tip = "Repli " + mode.toUpperCase() + " : " + r.message; }
+      if (r.detail){ tip += "\n(" + r.detail + ")"; }
+    }
+    badge.title = tip;
+    return badge;
+  }
+
+  // Ligne de provenance (compacte) sous l'en-tete : fichier:ligne + branche@commit.
+  // Le detail complet (commande, cwd, python, date) est en infobulle.
+  function baseName(p){ return String(p).split(/[\\/]/).pop(); }
+  function provenanceLine(fig){
+    const p = fig.provenance;
+    if (!p){ return null; }
+    const parts = [];
+    if (p.source){ parts.push(baseName(p.source) + (p.line ? ":" + p.line : "")); }
+    else if (p.script){ parts.push(baseName(p.script)); }
+    if (p.git_commit){ parts.push((p.git_branch ? p.git_branch + "@" : "") + p.git_commit + (p.git_dirty ? "*" : "")); }
+    if (parts.length === 0 && p.timestamp){ parts.push(p.timestamp); }
+    if (parts.length === 0){ return null; }
+    const div = document.createElement("div");
+    div.className = "prov";
+    div.textContent = parts.join("  ·  ");
+    const tip = [];
+    if (p.source){ tip.push("Source : " + p.source + (p.line ? ":" + p.line : "") + (p.function ? " (" + p.function + ")" : "")); }
+    if (p.command){ tip.push("Commande : " + p.command); }
+    if (p.cwd){ tip.push("Dossier : " + p.cwd); }
+    if (p.python){ tip.push("Python : " + p.python + (p.python_version ? " (" + p.python_version + ")" : "")); }
+    if (p.git_commit){ tip.push("Git : " + (p.git_branch || "?") + " " + p.git_commit + (p.git_dirty ? " (modifie)" : "")); }
+    if (p.timestamp){ tip.push("Date : " + p.timestamp); }
+    div.title = tip.join("\n");
+    return div;
+  }
+
   function makeCard(fig){
     figStore[fig.id] = fig;
     const card = document.createElement("div");
@@ -1394,6 +1763,9 @@
       badge.className = "badge";
       badge.textContent = "ANIM · " + fig.frames.length + "f";
       head.appendChild(badge);
+    } else {
+      const rb = renderBadge(fig);
+      if (rb){ head.appendChild(rb); }
     }
     const ts = document.createElement("span");
     ts.className = "ts";
@@ -1450,10 +1822,32 @@
     const bDel = iconBtn("trash", "Supprimer");
     bDel.addEventListener("click", function(){ vscodeApi.postMessage({ type: "delete", id: fig.id }); });
     const buttons = [bTags, bCopy];
+    if (fig.plotly && !fig.frames){
+      const bCsv = document.createElement("button");
+      bCsv.className = "textbtn";
+      bCsv.textContent = "CSV";
+      bCsv.title = "Exporter les donnees visibles en CSV (respecte le zoom)";
+      bCsv.addEventListener("click", function(){
+        exportCsv(document.getElementById("plot-" + fig.id), fig);
+      });
+      buttons.push(bCsv);
+    }
+    if (!fig.frames){
+      const bBundle = document.createElement("button");
+      bBundle.className = "textbtn";
+      bBundle.textContent = "Bundle";
+      bBundle.title = "Exporter un dossier publication (png + svg + metadata.json + figure.tex)";
+      bBundle.addEventListener("click", function(){
+        exportBundle(document.getElementById("plot-" + fig.id), fig);
+      });
+      buttons.push(bBundle);
+    }
     buttons.push(bExpand, bSave, bDel);
     head.append.apply(head, buttons);
 
     card.appendChild(head);
+    const prov = provenanceLine(fig);
+    if (prov){ card.appendChild(prov); }
     const tagRow = document.createElement("div");
     tagRow.className = "tagrow";
     card.appendChild(tagRow);
@@ -1566,6 +1960,43 @@
     return "#" + String(index + 1);
   }
 
+  // Figures superposables EN PRESERVANT leurs sous-graphes : meme structure
+  // (CompareUtil.figuresShareSubplots) et uniquement des traces empilables
+  // (scatter/bar). Sinon on retombe sur la superposition simple ou l'image.
+  function subplotsOverlayable(figs){
+    if (!CompareUtil.figuresShareSubplots(figs)){ return false; }
+    return figs.every(function(fig){
+      return (fig.plotly && fig.plotly.data ? fig.plotly.data : []).every(function(t){
+        const ty = t.type || "scatter";
+        return ty === "scatter" || ty === "bar";
+      });
+    });
+  }
+
+  // Synchronisation des zooms en mode cote a cote : un zoom/pan/reset sur un
+  // graphe applique la meme plage d'axes aux autres (CompareUtil.peerRangeUpdates).
+  // Le drapeau _spSyncing casse la boucle d'evenements.
+  function bindSideZoomSync(){
+    const els = Array.prototype.slice.call(compareBody.querySelectorAll(".compare-plot"));
+    if (els.length < 2){ return; }
+    els.forEach(function(el){
+      if (!el.on || el._spSyncBound){ return; }
+      el._spSyncBound = true;
+      el.on("plotly_relayout", function(ev){
+        if (el._spSyncing){ return; }
+        const upd = CompareUtil.peerRangeUpdates(ev);
+        if (Object.keys(upd).length === 0){ return; }
+        els.forEach(function(peer){
+          if (peer === el){ return; }
+          peer._spSyncing = true;
+          Promise.resolve(Plotly.relayout(peer, upd))
+            .then(function(){ peer._spSyncing = false; })
+            .catch(function(){ peer._spSyncing = false; });
+        });
+      });
+    });
+  }
+
   // ----- Helpers d'aplatissement des courbes (pour le calcul d'erreur) -----
 
   function numericX(values){
@@ -1574,6 +2005,15 @@
       const t = Date.parse(v);
       return isNaN(t) ? Number(v) : t;
     });
+  }
+
+  // Une trace compte comme "courbe" pour le calcul d'erreur si c'est un scatter
+  // avec un X interpolable (>= 2 x distincts) : exclut les barres et les lignes
+  // de reference verticales (axvline). Predicat partage par flattenCurves et le
+  // marquage des cles dans mergedPlotlyFigure (pour la reference au clic).
+  function isFlattenCurve(trace){
+    if ((trace.type || "scatter") !== "scatter"){ return false; }
+    return ErrorMath.isInterpolableX(numericX(trace.x || []));
   }
 
   // Aplati les courbes scatter des figures comparees en une liste
@@ -1586,12 +2026,8 @@
     let idx = 0;
     figs.forEach(function(fig){
       (fig.plotly && fig.plotly.data ? fig.plotly.data : []).forEach(function(trace){
-        const type = trace.type || "scatter";
-        if (type !== "scatter"){ return; } // barres exclues du calcul
+        if (!isFlattenCurve(trace)){ return; }
         const x = numericX(trace.x || []);
-        // Ecarte les lignes de reference (axvline : x constant) : ce sont des
-        // Line2D mais pas des courbes y = f(x), donc hors sujet pour l'erreur.
-        if (!ErrorMath.isInterpolableX(x)){ return; }
         const color = (trace.line && trace.line.color) ||
                       (trace.marker && trace.marker.color) || null;
         curves.push({
@@ -1641,16 +2077,15 @@
     return compareBody.querySelector(".compare-plot");
   }
 
-  errorApply.addEventListener("click", function(){
-    const figs = selectedForCompare.map(function(id){ return figStore[id]; }).filter(Boolean);
-    const types = Array.prototype.slice
-      .call(document.querySelectorAll(".error-type:checked"))
-      .map(function(cb){ return cb.value; });
-    if (types.length === 0){ errorWarn.textContent = "Cochez au moins un type d'erreur."; return; }
+  // Rend la superposition + sous-graphe d'erreur pour une reference donnee, et
+  // (re)branche le clic-sur-courbe qui change la reference. Centralise pour que
+  // l'application initiale (errorApply) et le changement au clic partagent le
+  // meme chemin (le graphe est re-cree a chaque fois -> on rebranche le clic).
+  function applyError(figs, refKey, types){
     const el = currentComparePlotEl();
     if (!el){ return; }
-    errorState = { active: true, refKey: errorRef.value, types: types };
-    const merged = mergedPlotlyFigureWithErrors(figs, errorState.refKey, types);
+    errorState = { active: true, refKey: refKey, types: types };
+    const merged = mergedPlotlyFigureWithErrors(figs, refKey, types);
     // Replie la barre de config AVANT de dimensionner : le graphe (et le
     // panneau d'erreur) prend toute la hauteur. Bouton « Erreur » pour rouvrir.
     errorPanel.style.display = "none";
@@ -1660,6 +2095,30 @@
     errorWarn.textContent = (merged._ignored && merged._ignored.length)
       ? "Sans recouvrement X, ignorees : " + merged._ignored.join(", ")
       : "";
+    bindRefClick(el, figs);
+  }
+
+  // Clic sur une courbe du panneau du haut -> elle devient la reference.
+  function bindRefClick(el, figs){
+    if (!el || !el.on){ return; }
+    el.on("plotly_click", function(ev){
+      if (!errorState.active){ return; }
+      const pt = ev && ev.points && ev.points[0];
+      const key = pt && pt.data && pt.data._curveKey;
+      if (!key || key === errorState.refKey){ return; }
+      errorRef.value = key;
+      applyError(figs, key, errorState.types);
+    });
+  }
+
+  errorApply.addEventListener("click", function(){
+    const figs = selectedForCompare.map(function(id){ return figStore[id]; }).filter(Boolean);
+    const types = Array.prototype.slice
+      .call(document.querySelectorAll(".error-type:checked"))
+      .map(function(cb){ return cb.value; });
+    if (types.length === 0){ errorWarn.textContent = "Cochez au moins un type d'erreur."; return; }
+    if (!currentComparePlotEl()){ return; }
+    applyError(figs, errorRef.value, types);
   });
 
   errorHide.addEventListener("click", function(){
@@ -1724,11 +2183,17 @@
     const data = [];
     let widthIn = first.plotly.width_in || 7;
     let heightIn = first.plotly.height_in || 4;
+    let curveKey = 0;   // suit l'ordre des cles c0,c1... de flattenCurves
     figs.forEach(function(fig, index){
       const label = compareLabel(index);
       widthIn = Math.max(widthIn, fig.plotly.width_in || 7);
       heightIn = Math.max(heightIn, fig.plotly.height_in || 4);
-      fig.plotly.data.forEach(function(trace){ data.push(overlayTrace(trace, label, index)); });
+      fig.plotly.data.forEach(function(trace){
+        const out = overlayTrace(trace, label, index);
+        // Cle de courbe (pour designer la reference d'erreur en cliquant la trace).
+        if (isFlattenCurve(trace)){ out._curveKey = "c" + curveKey; curveKey++; }
+        data.push(out);
+      });
     });
     return {
       id: "compare",
@@ -1851,6 +2316,17 @@
       const merged = mergedPlotlyFigure(figs);
       pendingPlots.push(function(){ renderPlotly(plot, merged, true, null); });
       updateErrorButton(figs);
+    } else if (subplotsOverlayable(figs)){
+      // Figures multi-sous-graphes de meme structure : superposition par
+      // sous-graphe (la grille est preservee) au lieu du repli image.
+      const stack = document.createElement("div");
+      stack.className = "compare-stack";
+      const plot = document.createElement("div");
+      plot.className = "compare-plot";
+      stack.appendChild(plot);
+      compareBody.appendChild(stack);
+      const merged = CompareUtil.mergeSubplotFigures(figs);
+      pendingPlots.push(function(){ renderPlotly(plot, merged, true, null); });
     } else {
       const stack = document.createElement("div");
       stack.className = "compare-stack";
@@ -1867,6 +2343,7 @@
     setTimeout(function(){
       pendingPlots.forEach(function(fn){ fn(); });
       resizeComparePlots();
+      if (mode === "side"){ bindSideZoomSync(); }
     }, 30);
   }
   function closeCompare(){
@@ -2034,7 +2511,11 @@
       list.appendChild(makeCard(msg.fig));
       afterAttach(msg.fig);
       n = n + 1; refreshCount();
-      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+      if (sortMode !== "arrival"){
+        applySort();   // insere la nouvelle figure a sa place selon le tri actif
+      } else {
+        window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+      }
     } else if (msg.type === "remove"){
       removeCard(msg.id);
       n = Math.max(0, n - 1); refreshCount();
@@ -2067,6 +2548,13 @@
     searchInput.addEventListener("input", function(e){
       searchQuery = e.target.value || "";
       applySearchFilter();
+    });
+  }
+  const sortSelect = document.getElementById("sortSelect");
+  if (sortSelect){
+    sortSelect.addEventListener("change", function(e){
+      sortMode = e.target.value || "arrival";
+      applySort();
     });
   }
   document.getElementById("fitToggle").addEventListener("change", function(e){
