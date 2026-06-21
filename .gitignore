@@ -12,3 +12,6 @@ env/
 
 # Paquets d'extension compilés
 *.vsix
+
+# Brouillons de travail (plans/agents superpowers) — jamais versionnés
+.superpowers/
