@@ -11,12 +11,14 @@
 #   - BarContainer      (bar, barh)
 #   - AxesImage         (imshow : 2D -> heatmap, RGB -> image)
 #   - QuadMesh          (pcolormesh -> heatmap)
+#   - QuadContourSet    (contour/contourf)
+#   - Quiver            (quiver -> polygones de fleches)
 #   - Text/Annotation   (text, annotate)
 # Gere : sous-graphes, titres, labels, limites, echelle log,
-#        grille, legendes, colormaps.
+#        grille, legendes, colormaps, twinx/twiny, axes polaires simples.
 #
-# Si la figure contient autre chose (contour, quiver, patches
-# libres, 3D...), convert_figure retourne None et le backend
+# Si la figure contient autre chose (streamplot, patches
+# libres complexes, 3D...), convert_figure retourne None et le backend
 # retombe sur le rendu SVG. Aucune dependance hors matplotlib.
 # ============================================================
 
@@ -24,9 +26,12 @@ import numpy as np
 import matplotlib.colors as mcolors
 from matplotlib.lines import Line2D
 from matplotlib.collections import PathCollection, QuadMesh, PolyCollection
+from matplotlib.contour import QuadContourSet
 from matplotlib.image import AxesImage
 from matplotlib.container import BarContainer, ErrorbarContainer
-from matplotlib.patches import Rectangle
+from matplotlib.patches import PathPatch, Rectangle
+from matplotlib.path import Path as MplPath
+from matplotlib.quiver import Quiver
 from matplotlib.text import Annotation
 
 _MAX_POINTS = 500000  # au-dela : figure trop lourde pour le JSON -> fallback
@@ -56,6 +61,61 @@ _LEGEND_LOC = {
     9: {"x": 0.5, "xanchor": "center", "y": 0.99, "yanchor": "top"},
     10: {"x": 0.5, "xanchor": "center", "y": 0.5, "yanchor": "middle"},
 }
+
+
+def _legend_bbox_position(legend, ax):
+    """Position Plotly (paper coords) pour une legende avec bbox_to_anchor.
+    Matplotlib stocke le bbox en coordonnees affichees ; on le ramene dans le
+    repere figure pour que Plotly le place au meme endroit relatif."""
+    if getattr(legend, "_bbox_to_anchor", None) is None:
+        return None
+    try:
+        bbox = legend.get_bbox_to_anchor().transformed(ax.figure.transFigure.inverted())
+    except Exception:
+        return None
+
+    base = _LEGEND_LOC.get(getattr(legend, "_loc", 0), _LEGEND_LOC[1])
+    xanchor = base.get("xanchor", "right")
+    yanchor = base.get("yanchor", "top")
+    if xanchor == "left":
+        x = bbox.x0
+    elif xanchor == "right":
+        x = bbox.x1
+    else:
+        x = 0.5 * (bbox.x0 + bbox.x1)
+
+    if yanchor == "bottom":
+        y = bbox.y0
+    elif yanchor == "top":
+        y = bbox.y1
+    else:
+        y = 0.5 * (bbox.y0 + bbox.y1)
+
+    return {
+        "x": float(x),
+        "xanchor": xanchor,
+        "y": float(y),
+        "yanchor": yanchor,
+    }
+
+
+def _expand_margin_for_legend(layout, legend_layout):
+    """Laisse de l'air quand bbox_to_anchor pousse la legende hors papier."""
+    margin = layout.setdefault("margin", {})
+    x = legend_layout.get("x")
+    y = legend_layout.get("y")
+    try:
+        if x is not None and x > 1.0:
+            margin["r"] = max(int(margin.get("r", 30)), 150)
+        if x is not None and x < 0.0:
+            margin["l"] = max(int(margin.get("l", 60)), 150)
+        if y is not None and y > 1.0:
+            margin["t"] = max(int(margin.get("t", 50)), 110)
+        if y is not None and y < 0.0:
+            margin["b"] = max(int(margin.get("b", 50)), 110)
+    except TypeError:
+        pass
+
 
 _MARKERS = {
     "o": "circle",
@@ -100,6 +160,20 @@ def _colorscale(cmap, n=16):
     return scale
 
 
+def _colorbar_title(mappable):
+    """Titre (= unite) de la colorbar associee a un mappable (imshow,
+    pcolormesh, scatter colore), ou None si aucune colorbar/etiquette. La
+    colorbar matplotlib stocke son label sur l'axe de son `ax` dedie."""
+    cbar = getattr(mappable, "colorbar", None)
+    if cbar is None:
+        return None
+    try:
+        label = cbar.ax.get_ylabel() or cbar.ax.get_xlabel()
+    except Exception:
+        label = None
+    return label or None
+
+
 # Une etiquette mpl est affichable en legende si elle est non vide et ne commence
 # pas par "_" (mpl masque ces labels internes).
 def _label_ok(label):
@@ -117,6 +191,25 @@ def _finite_list(values):
             out.append(None)
     return out
 
+
+def _segments_to_xy(segments):
+    """Segments Nx2 -> listes x/y Plotly avec None entre les morceaux."""
+    xs = []
+    ys = []
+    total = 0
+    for segment in segments:
+        segment = np.asarray(segment, dtype=float)
+        if segment.ndim != 2 or segment.shape[0] < 2 or segment.shape[1] < 2:
+            continue
+        xs.extend(_finite_list(segment[:, 0]))
+        ys.extend(_finite_list(segment[:, 1]))
+        xs.append(None)
+        ys.append(None)
+        total += int(segment.shape[0])
+    if xs:
+        xs.pop()
+        ys.pop()
+    return xs, ys, total
 
 
 def _color_at(colors, index=0, default="rgba(0,0,0,0.25)"):
@@ -184,7 +277,7 @@ def _is_date_axis(axis):
             conv = getter()
         except Exception:
             conv = None
-    if conv is None:
+    else:
         conv = getattr(axis, "converter", None)
     if conv is None:
         return False
@@ -535,6 +628,276 @@ def _convert_poly_collection(collection, axis_suffix):
     return traces, total_points
 
 
+def _split_path_segments(vertices, codes, close=False):
+    """Decoupe un chemin matplotlib en segments utilisables par Plotly."""
+    vertices = np.asarray(vertices, dtype=float)
+    if vertices.ndim != 2 or vertices.shape[1] < 2:
+        return []
+    if codes is None:
+        finite = np.all(np.isfinite(vertices[:, :2]), axis=1)
+        segment = vertices[finite, :2]
+        if close and segment.shape[0] > 0 and not np.allclose(segment[0], segment[-1]):
+            segment = np.vstack([segment, segment[0]])
+        return [segment] if segment.shape[0] >= 2 else []
+
+    segments = []
+    current = []
+    for vertex, code in zip(vertices[:, :2], codes):
+        if code == MplPath.STOP:
+            break
+        if not np.all(np.isfinite(vertex)):
+            continue
+        if code == MplPath.MOVETO:
+            if current:
+                segment = np.asarray(current, dtype=float)
+                if close and segment.shape[0] > 0 and not np.allclose(segment[0], segment[-1]):
+                    segment = np.vstack([segment, segment[0]])
+                segments.append(segment)
+            current = [vertex]
+            continue
+        if code == MplPath.CLOSEPOLY:
+            if current:
+                segment = np.asarray(current, dtype=float)
+                if close and segment.shape[0] > 0 and not np.allclose(segment[0], segment[-1]):
+                    segment = np.vstack([segment, segment[0]])
+                segments.append(segment)
+            current = []
+            continue
+        current.append(vertex)
+
+    if current:
+        segment = np.asarray(current, dtype=float)
+        if close and segment.shape[0] > 0 and not np.allclose(segment[0], segment[-1]):
+            segment = np.vstack([segment, segment[0]])
+        segments.append(segment)
+    return [segment for segment in segments if segment.shape[0] >= 2]
+
+
+def _is_simple_path_patch(patch, max_vertices=200):
+    """True pour les polygones PathPatch simples ; False pour les courbes complexes."""
+    try:
+        path = patch.get_path()
+        vertices = np.asarray(path.vertices)
+        codes = path.codes
+    except Exception:
+        return False
+    if vertices.ndim != 2 or vertices.shape[0] == 0 or vertices.shape[0] > max_vertices:
+        return False
+    if codes is None:
+        return True
+    allowed = {MplPath.MOVETO, MplPath.LINETO, MplPath.CLOSEPOLY, MplPath.STOP}
+    try:
+        return all(code in allowed for code in codes)
+    except TypeError:
+        return False
+
+
+def _convert_path_patch(patch, axis_suffix, ax):
+    """PathPatch simple (notamment boxplot patch_artist=True) -> polygone Plotly."""
+    try:
+        path = patch.get_path()
+        vertices = np.asarray(path.vertices, dtype=float)
+        display_vertices = patch.get_transform().transform(vertices)
+        data_vertices = ax.transData.inverted().transform(display_vertices)
+    except Exception:
+        return None, 0
+
+    segments = _split_path_segments(data_vertices, path.codes, close=True)
+    if len(segments) == 0:
+        return [], 0
+
+    face_rgba = mcolors.to_rgba(patch.get_facecolor())
+    edge_rgba = mcolors.to_rgba(patch.get_edgecolor())
+    face_color = _hex(face_rgba)
+    edge_color = _hex(edge_rgba)
+    try:
+        linewidth = float(patch.get_linewidth())
+    except Exception:
+        linewidth = 1.0
+    label = patch.get_label()
+
+    traces = []
+    total_points = 0
+    for index, segment in enumerate(segments):
+        if segment.shape[0] < 3:
+            continue
+        x = segment[:, 0]
+        y = segment[:, 1]
+        total_points += x.size
+        trace = {
+            "type": "scatter",
+            "mode": "lines",
+            "x": _finite_list(x),
+            "y": _finite_list(y),
+            "line": {"color": edge_color, "width": linewidth},
+            "xaxis": "x" + axis_suffix,
+            "yaxis": "y" + axis_suffix,
+            "showlegend": False,
+        }
+        if face_rgba[3] > 0:
+            trace["fill"] = "toself"
+            trace["fillcolor"] = face_color
+            trace["hoveron"] = "points+fills"
+        if index == 0 and _label_ok(label):
+            trace["name"] = label
+            trace["showlegend"] = True
+        traces.append(trace)
+
+    return traces, total_points
+
+
+def _contour_level(contour, index):
+    if getattr(contour, "filled", False):
+        values = getattr(contour, "layers", None)
+    else:
+        values = getattr(contour, "levels", None)
+    try:
+        if values is not None and len(values) > index:
+            return float(values[index])
+    except Exception:
+        pass
+    return None
+
+
+def _convert_contour_set(contour, axis_suffix):
+    """QuadContourSet (contour/contourf) -> traces scatter lignes/remplies."""
+    try:
+        paths = list(contour.get_paths())
+    except Exception:
+        return None, 0
+    if len(paths) == 0:
+        return [], 0
+
+    filled = bool(getattr(contour, "filled", False))
+    facecolors = contour.get_facecolors() if hasattr(contour, "get_facecolors") else []
+    edgecolors = contour.get_edgecolors() if hasattr(contour, "get_edgecolors") else []
+    linewidths = contour.get_linewidths() if hasattr(contour, "get_linewidths") else []
+    traces = []
+    total_points = 0
+
+    for index, path in enumerate(paths):
+        vertices = np.asarray(path.vertices, dtype=float)
+        if vertices.ndim != 2 or vertices.shape[1] < 2:
+            continue
+        segments = _split_path_segments(vertices, path.codes, close=filled)
+        xs, ys, n_points = _segments_to_xy(segments)
+        if n_points == 0:
+            continue
+        total_points += n_points
+        level = _contour_level(contour, index)
+
+        if filled:
+            fill_color = _color_at(facecolors, index, "rgba(31,119,180,0.350)")
+            edge_default = fill_color if len(edgecolors) > 0 else "rgba(0,0,0,0.000)"
+            edge_color = _color_at(edgecolors, index, edge_default)
+            line_width = _number_at(linewidths, index, 0.0 if len(edgecolors) == 0 else 1.0)
+            trace = {
+                "type": "scatter",
+                "mode": "lines",
+                "x": xs,
+                "y": ys,
+                "fill": "toself",
+                "fillcolor": fill_color,
+                "line": {"color": edge_color, "width": line_width},
+                "hoveron": "points+fills",
+                "xaxis": "x" + axis_suffix,
+                "yaxis": "y" + axis_suffix,
+                "showlegend": False,
+            }
+        else:
+            line_color = _color_at(edgecolors, index, "rgba(31,119,180,1.000)")
+            trace = {
+                "type": "scatter",
+                "mode": "lines",
+                "x": xs,
+                "y": ys,
+                "line": {
+                    "color": line_color,
+                    "width": _number_at(linewidths, index, 1.0),
+                },
+                "connectgaps": False,
+                "xaxis": "x" + axis_suffix,
+                "yaxis": "y" + axis_suffix,
+                "showlegend": False,
+            }
+        if level is not None and np.isfinite(level):
+            trace["name"] = "level %.6g" % level
+            trace["hovertemplate"] = "level %.6g<extra></extra>" % level
+        traces.append(trace)
+
+    return traces, total_points
+
+
+def _convert_quiver(quiver, axis_suffix, ax):
+    """Quiver -> polygones de fleches Plotly en coordonnees donnees."""
+    try:
+        paths = list(quiver.get_paths())
+    except Exception:
+        paths = []
+    if len(paths) == 0:
+        try:
+            ax.figure.canvas.draw()
+            paths = list(quiver.get_paths())
+        except Exception:
+            return None, 0
+    if len(paths) == 0:
+        return [], 0
+
+    try:
+        offsets = np.asarray(quiver.get_offsets(), dtype=float)
+        offset_transform = quiver.get_offset_transform()
+        base_transform = quiver.get_transform()
+    except Exception:
+        return None, 0
+
+    facecolors = quiver.get_facecolors() if hasattr(quiver, "get_facecolors") else []
+    edgecolors = quiver.get_edgecolors() if hasattr(quiver, "get_edgecolors") else []
+    linewidths = quiver.get_linewidths() if hasattr(quiver, "get_linewidths") else []
+    label = quiver.get_label() if hasattr(quiver, "get_label") else None
+    traces = []
+    total_points = 0
+
+    for index, path in enumerate(paths):
+        vertices = np.asarray(path.vertices, dtype=float)
+        if vertices.ndim != 2 or vertices.shape[0] < 3 or vertices.shape[1] < 2:
+            continue
+        try:
+            display_vertices = base_transform.transform(vertices)
+            if offsets.ndim == 2 and offsets.shape[0] > 0:
+                offset = offsets[min(index, offsets.shape[0] - 1)]
+                display_vertices = display_vertices + offset_transform.transform(offset)
+            data_vertices = ax.transData.inverted().transform(display_vertices)
+        except Exception:
+            return None, 0
+
+        segments = _split_path_segments(data_vertices, path.codes, close=True)
+        xs, ys, n_points = _segments_to_xy(segments)
+        if n_points < 3:
+            continue
+        total_points += n_points
+        fill_color = _color_at(facecolors, index, "rgba(31,119,180,0.800)")
+        edge_color = _color_at(edgecolors, index, fill_color)
+        trace = {
+            "type": "scatter",
+            "mode": "lines",
+            "x": xs,
+            "y": ys,
+            "fill": "toself",
+            "fillcolor": fill_color,
+            "line": {"color": edge_color, "width": _number_at(linewidths, index, 0.0)},
+            "hoveron": "points+fills",
+            "xaxis": "x" + axis_suffix,
+            "yaxis": "y" + axis_suffix,
+            "showlegend": False,
+        }
+        if index == 0 and _label_ok(label):
+            trace["name"] = label
+            trace["showlegend"] = True
+        traces.append(trace)
+
+    return traces, total_points
+
+
 def _convert_scatter(collection, axis_suffix):
     """PathCollection (scatter) -> trace markers, avec couleurs/tailles par point
     et colormap eventuelle. Renvoie (trace, n_points)."""
@@ -563,6 +926,9 @@ def _convert_scatter(collection, axis_suffix):
         if vmax is not None:
             marker["cmax"] = float(vmax)
         marker["showscale"] = True
+        cb_title = _colorbar_title(collection)
+        if cb_title:
+            marker["colorbar"] = {"title": {"text": cb_title}}
     else:
         face = collection.get_facecolor()
         if len(face) == 1:
@@ -653,6 +1019,9 @@ def _convert_image(image, axis_suffix):
             "yaxis": "y" + axis_suffix,
             "showlegend": False,
         }
+        cb_title = _colorbar_title(image)
+        if cb_title:
+            trace["colorbar"] = {"title": {"text": cb_title}}
         return trace, n_points
 
     if data.ndim == 3 and data.shape[2] in (3, 4):
@@ -699,6 +1068,9 @@ def _convert_quadmesh(mesh, axis_suffix):
         "yaxis": "y" + axis_suffix,
         "showlegend": False,
     }
+    cb_title = _colorbar_title(mesh)
+    if cb_title:
+        trace["colorbar"] = {"title": {"text": cb_title}}
     return trace, int(z.size)
 
 
@@ -925,13 +1297,15 @@ def _append_plotly_texts(layout, ax, xref, yref, position, x_is_date, y_is_date)
 # ------------------------------------------------------------
 # Detection des artistes non supportes (-> fallback SVG)
 # ------------------------------------------------------------
-def _has_unsupported_artist(ax, bar_rectangles, supported_collections=None, supported_patches=None):
-    """FRONTIERE DE CORRECTION : True si l'axe contient un artiste qu'on ne sait
-    pas convertir fidelement -> l'appelant (convert_figure) renvoie None et tout
-    bascule en SVG. On laisse passer les types geres + les sous-artistes
-    "reclames" (rectangles de barres, LineCollection d'errorbar, fleches
-    d'annotations) fournis dans bar_rectangles / supported_collections /
-    supported_patches. Tout le reste (contour, quiver, patch libre...) = refus."""
+def _first_unsupported_artist(ax, bar_rectangles, supported_collections=None, supported_patches=None):
+    """FRONTIERE DE CORRECTION : retourne le premier artiste que l'axe contient
+    et qu'on ne sait pas convertir fidelement (ou None si tout est gere) ->
+    l'appelant (convert_figure) renvoie None et tout bascule en SVG. On laisse
+    passer les types geres + les sous-artistes "reclames" (rectangles de barres,
+    LineCollection d'errorbar, fleches d'annotations, PathPatch simples) fournis
+    dans bar_rectangles / supported_collections / supported_patches. Tout le
+    reste (streamplot, patch libre complexe...) = refus. Le type de l'artiste
+    rendu sert au diagnostic de fallback (cf. _describe_unsupported)."""
     from matplotlib.collections import Collection
     from matplotlib.patches import Patch
     from matplotlib.spines import Spine
@@ -944,6 +1318,8 @@ def _has_unsupported_artist(ax, bar_rectangles, supported_collections=None, supp
             continue  # bordures des axes : ignorables (heritent de Patch)
         if child in supported_collections or child in supported_patches:
             continue
+        if child is ax.patch:
+            continue
         if isinstance(child, (Line2D, PathCollection, QuadMesh, PolyCollection, AxesImage)):
             continue
         if isinstance(child, Rectangle):
@@ -952,26 +1328,127 @@ def _has_unsupported_artist(ax, bar_rectangles, supported_collections=None, supp
             # le rectangle de fond de l'axe est ignorable
             if child is ax.patch:
                 continue
-            return True
-        # Toute autre Collection (ContourSet de contour/contourf,
-        # EventCollection...) n'est pas convertie -> fallback SVG.
+            return child
+        # Toute autre Collection (streamplot, EventCollection...) n'est pas
+        # convertie -> fallback SVG.
         if isinstance(child, Collection):
-            return True
+            return child
         if isinstance(child, Patch):
-            return True
+            return child
         # Text, Spine, Axis, Legend... : ignorables
-    return False
+    return None
+
+
+def _has_unsupported_artist(ax, bar_rectangles, supported_collections=None, supported_patches=None):
+    """True si l'axe contient un artiste non convertible (cf.
+    _first_unsupported_artist). Conserve pour la lisibilite des appelants."""
+    return _first_unsupported_artist(
+        ax, bar_rectangles, supported_collections, supported_patches
+    ) is not None
 
 
 # ------------------------------------------------------------
-# Classification des axes (detection twinx)
+# Diagnostic de fallback (pourquoi pas de rendu Plotly interactif)
 # ------------------------------------------------------------
-# _shares_x + _same_position servent a detecter un twinx : deux axes qui
-# partagent le X et occupent exactement la meme place (meme rectangle).
+# convert_figure_with_reason renvoie, en cas d'echec, un dict
+# {code, message, detail} : `code` est stable (consomme par l'UI), `message`
+# est une phrase courte en francais, `detail` precise (nom de classe mpl...).
+def _reason(code, message, detail=None):
+    return {"code": code, "message": message, "detail": detail}
+
+
+# Indices cibles pour les artistes non geres les plus frequents (par nom de
+# classe matplotlib), afin d'orienter l'utilisateur vers la cause.
+_UNSUPPORTED_HINTS = {
+    "LineCollection": "streamplot, hlines/vlines ou contour exotique",
+    "PatchCollection": "collection de patches (ex. streamplot)",
+    "PolyCollection": "remplissage complexe",
+    "Poly3DCollection": "trace 3D non gere",
+    "Path3DCollection": "trace 3D non gere",
+    "Line3D": "trace 3D non gere",
+    "Wedge": "camembert (pie) non gere",
+}
+
+
+def _describe_unsupported(artist):
+    """Construit la raison de fallback pour un artiste non converti."""
+    name = type(artist).__name__
+    hint = _UNSUPPORTED_HINTS.get(name)
+    detail = name if hint is None else name + " — " + hint
+    return _reason("unsupported_artist", "Artiste non gere : " + name, detail)
+
+
+# ------------------------------------------------------------
+# Axes polaires
+# ------------------------------------------------------------
+def _is_polar_axis(ax):
+    return getattr(ax, "name", "") == "polar"
+
+
+def _convert_axis_traces_to_polar(traces, subplot):
+    """Convertit les traces scatter x/y(theta/r) d'un axe polar en scatterpolar."""
+    for trace in traces:
+        if trace.get("type") != "scatter":
+            return False
+        if "error_x" in trace or "error_y" in trace:
+            return False
+        if "x" not in trace or "y" not in trace:
+            return False
+        trace["type"] = "scatterpolar"
+        trace["theta"] = trace.pop("x")
+        trace["r"] = trace.pop("y")
+        trace["thetaunit"] = "radians"
+        trace["subplot"] = subplot
+        trace.pop("xaxis", None)
+        trace.pop("yaxis", None)
+    return True
+
+
+def _polar_layout(ax, position):
+    radial = {
+        "range": [float(ax.get_ylim()[0]), float(ax.get_ylim()[1])],
+        "gridcolor": "#e6e6e6",
+        "linecolor": "#444444",
+        "ticks": "outside",
+    }
+    angular = {
+        "gridcolor": "#e6e6e6",
+        "linecolor": "#444444",
+        "ticks": "outside",
+    }
+    try:
+        angular["direction"] = "clockwise" if ax.get_theta_direction() < 0 else "counterclockwise"
+        angular["rotation"] = float(np.degrees(ax.get_theta_offset()))
+    except Exception:
+        pass
+    return {
+        "domain": {
+            "x": [float(position.x0), float(position.x1)],
+            "y": [float(position.y0), float(position.y1)],
+        },
+        "bgcolor": "#ffffff",
+        "radialaxis": radial,
+        "angularaxis": angular,
+    }
+
+
+# ------------------------------------------------------------
+# Classification des axes (detection twinx/twiny)
+# ------------------------------------------------------------
+# _shares_x/_shares_y + _same_position servent a detecter les axes jumeaux :
+# deux axes qui partagent une dimension et occupent exactement le meme rectangle.
 def _shares_x(a, b):
     """True si a et b partagent le meme axe X (candidats twinx)."""
     try:
         return b in a.get_shared_x_axes().get_siblings(a)
+    except Exception:
+        return False
+
+
+def _shares_y(a, b):
+    """True si a et b partagent le meme axe Y (candidats twiny)."""
+    try:
+        return b in a.get_shared_y_axes().get_siblings(a)
     except Exception:
         return False
 
@@ -987,24 +1464,33 @@ def _same_position(a, b, eps=1e-3):
 
 
 def _classify_axes(axes_list):
-    """Pour chaque axe : {ax, suffix, is_twin, host_suffix}.
-    Un axe est un twin (twinx) s'il partage X avec un axe precedent ET occupe
-    la meme position. Les sous-graphes distincts (positions differentes) ne le
-    sont pas, meme avec sharex=True."""
+    """Pour chaque axe : {ax, suffix, is_twin, twin_kind, host_suffix}.
+    `twinx` partage X et ajoute un axe Y secondaire ; `twiny` partage Y et
+    ajoute un axe X secondaire. Les sous-graphes distincts ne sont jamais
+    traites comme des twins, meme avec sharex/sharey."""
     infos = []
     for index, ax in enumerate(axes_list):
         infos.append({
             "ax": ax,
             "suffix": "" if index == 0 else str(index + 1),
             "is_twin": False,
+            "twin_kind": None,
             "host_suffix": None,
         })
     for i in range(len(infos)):
         ax = infos[i]["ax"]
         for j in range(i):
             host = infos[j]["ax"]
-            if _shares_x(ax, host) and _same_position(ax, host):
+            if not _same_position(ax, host):
+                continue
+            if _shares_x(ax, host):
                 infos[i]["is_twin"] = True
+                infos[i]["twin_kind"] = "twinx"
+                infos[i]["host_suffix"] = infos[j]["suffix"]
+                break
+            if _shares_y(ax, host):
+                infos[i]["is_twin"] = True
+                infos[i]["twin_kind"] = "twiny"
                 infos[i]["host_suffix"] = infos[j]["suffix"]
                 break
     return infos
@@ -1032,6 +1518,12 @@ def _apply_legend(layout, ax):
     pos = _LEGEND_LOC.get(getattr(legend, "_loc", 0))
     if pos:
         legend_layout.update(pos)
+    # Si bbox_to_anchor est explicite, il gagne sur le loc interne : le loc
+    # fournit l'ancre, le bbox fournit la position en coordonnees papier.
+    bbox_pos = _legend_bbox_position(legend, ax)
+    if bbox_pos is not None:
+        legend_layout.update(bbox_pos)
+        _expand_margin_for_legend(layout, legend_layout)
     layout["legend"] = legend_layout
 
 
@@ -1039,10 +1531,22 @@ def _apply_legend(layout, ax):
 # Point d'entree
 # ------------------------------------------------------------
 def convert_figure(fig):
-    """Figure matplotlib -> {"data": [...], "layout": {...}} ou None."""
+    """Figure matplotlib -> {"data": [...], "layout": {...}} ou None.
+    Enveloppe de convert_figure_with_reason qui ne renvoie que le spec."""
+    spec, _ = convert_figure_with_reason(fig)
+    return spec
+
+
+def convert_figure_with_reason(fig):
+    """Figure matplotlib -> (spec, reason).
+
+    spec   : {"data": [...], "layout": {...}} si la figure est convertible en
+             Plotly interactif, sinon None.
+    reason : None en cas de succes ; sinon un dict {code, message, detail}
+             expliquant le repli (cf. _reason) — consomme par le diagnostic UI."""
     axes_list = [ax for ax in fig.get_axes() if ax.get_label() != "<colorbar>"]
     if len(axes_list) == 0:
-        return None
+        return None, _reason("no_axes", "Aucun axe a convertir")
 
     data = []
     layout = {
@@ -1064,14 +1568,18 @@ def convert_figure(fig):
         ax = info["ax"]
         suffix = info["suffix"]
         is_twin = info["is_twin"]
+        twin_kind = info["twin_kind"]
         host_suffix = info["host_suffix"]
         axis_x = "xaxis" + suffix
         axis_y = "yaxis" + suffix
+        is_polar = _is_polar_axis(ax)
         axis_trace_start = len(data)
 
         # rectangles/barres d'erreur/textes appartenant a des artistes geres
         # (pour eviter un fallback SVG juste a cause de leurs sous-artistes).
         bar_rectangles = set()
+        path_patches = set()
+        supported_collections = set()
         errorbar_containers = []
         errorbar_lines = set()
         errorbar_collections = set()
@@ -1087,19 +1595,28 @@ def convert_figure(fig):
                     errorbar_lines.add(data_line)
                 errorbar_lines.update(caplines)
                 errorbar_collections.update(barlinecols)
+        for child in ax.get_children():
+            if not is_polar and isinstance(child, (QuadContourSet, Quiver)):
+                supported_collections.add(child)
+        for patch in ax.patches:
+            if isinstance(patch, PathPatch) and patch is not ax.patch and _is_simple_path_patch(patch):
+                path_patches.add(patch)
         for text in getattr(ax, "texts", []):
             arrow_patch = getattr(text, "arrow_patch", None)
             if arrow_patch is not None:
                 text_arrow_patches.add(arrow_patch)
 
-        if _has_unsupported_artist(ax, bar_rectangles, errorbar_collections, text_arrow_patches):
-            return None
+        supported_collections.update(errorbar_collections)
+        supported_patches = text_arrow_patches | path_patches
+        offending = _first_unsupported_artist(ax, bar_rectangles, supported_collections, supported_patches)
+        if offending is not None:
+            return None, _describe_unsupported(offending)
 
         # ---- traces ----
         for container in errorbar_containers:
             trace, n = _convert_errorbar(container, suffix)
             if trace is None:
-                return None
+                return None, _reason("convert_failed", "Echec de conversion d'une barre d'erreur", "ErrorbarContainer")
             data.append(trace)
             total_points += n
 
@@ -1116,7 +1633,11 @@ def convert_figure(fig):
                 continue
             traces = None
             n = 0
-            if isinstance(child, PathCollection):
+            if isinstance(child, QuadContourSet):
+                traces, n = _convert_contour_set(child, suffix)
+            elif isinstance(child, Quiver):
+                traces, n = _convert_quiver(child, suffix, ax)
+            elif isinstance(child, PathCollection):
                 trace, n = _convert_scatter(child, suffix)
                 traces = [trace] if trace is not None else None
             elif isinstance(child, QuadMesh):
@@ -1130,7 +1651,18 @@ def convert_figure(fig):
             else:
                 continue
             if traces is None:
-                return None
+                return None, _reason("convert_failed", "Echec de conversion d'un artiste", type(child).__name__)
+            data.extend(traces)
+            total_points += n
+
+        for patch in ax.patches:
+            if patch is ax.patch or patch in bar_rectangles or patch in text_arrow_patches:
+                continue
+            if not isinstance(patch, PathPatch):
+                continue
+            traces, n = _convert_path_patch(patch, suffix, ax)
+            if traces is None:
+                return None, _reason("convert_failed", "Echec de conversion d'un patch", type(patch).__name__)
             data.extend(traces)
             total_points += n
 
@@ -1142,7 +1674,11 @@ def convert_figure(fig):
                     total_points += n
 
         if total_points > _MAX_POINTS:
-            return None
+            return None, _reason(
+                "too_many_points",
+                "Trop de points pour le mode interactif (> 500 000)",
+                str(total_points) + " points",
+            )
 
         # ---- axes temporels : datenums -> chaines ISO ----
         x_is_date = _is_date_axis(ax.xaxis)
@@ -1169,8 +1705,33 @@ def convert_figure(fig):
         _apply_legend(layout, ax)
         position = ax.get_position()
 
+        # ---- axe polar : traces scatterpolar Plotly ----
+        if is_polar:
+            polar_name = "polar" + suffix
+            if not _convert_axis_traces_to_polar(data[axis_trace_start:], polar_name):
+                return None, _reason(
+                    "polar_unsupported",
+                    "Axe polaire : type de trace non gere",
+                    "seuls lignes/points (scatterpolar) sont convertis",
+                )
+            layout[polar_name] = _polar_layout(ax, position)
+            title = ax.get_title()
+            if title:
+                layout["annotations"].append({
+                    "text": title,
+                    "x": float((position.x0 + position.x1) / 2.0),
+                    "y": float(position.y1),
+                    "xref": "paper",
+                    "yref": "paper",
+                    "xanchor": "center",
+                    "yanchor": "bottom",
+                    "showarrow": False,
+                    "font": {"size": 14},
+                })
+            continue
+
         # ---- twinx : l'axe secondaire reutilise le X de l'hote ----
-        if is_twin:
+        if is_twin and twin_kind == "twinx":
             for trace in data[axis_trace_start:]:
                 trace["xaxis"] = "x" + host_suffix
                 trace["yaxis"] = "y" + suffix
@@ -1200,6 +1761,38 @@ def convert_figure(fig):
                 layout[axis_y].pop("range", None)
             _append_plotly_texts(layout, ax, "x" + host_suffix, "y" + suffix, position, x_is_date, y_is_date)
             continue  # pas de bloc axe X / domaine / titre pour un twin
+
+        # ---- twiny : l'axe secondaire reutilise le Y de l'hote ----
+        if is_twin and twin_kind == "twiny":
+            for trace in data[axis_trace_start:]:
+                trace["xaxis"] = "x" + suffix
+                trace["yaxis"] = "y" + host_suffix
+            layout[axis_x] = {
+                "overlaying": "x" + host_suffix,
+                "side": "top",
+                "anchor": "y" + host_suffix,
+                "title": {"text": ax.get_xlabel()},
+                "showgrid": False,
+                "zeroline": False,
+                "linecolor": "#444444",
+                "ticks": "outside",
+            }
+            if ax.get_xscale() == "log":
+                layout[axis_x]["type"] = "log"
+            ticks_x = _custom_ticks(ax.xaxis)
+            if ticks_x is not None and ax.get_xscale() != "log":
+                layout[axis_x]["tickvals"] = ticks_x[0]
+                layout[axis_x]["ticktext"] = ticks_x[1]
+            x_range = _axis_range(ax, "x")
+            if x_range is not None:
+                layout[axis_x]["range"] = x_range
+            if x_is_date:
+                layout[axis_x]["type"] = "date"
+                layout[axis_x].pop("tickvals", None)
+                layout[axis_x].pop("ticktext", None)
+                layout[axis_x].pop("range", None)
+            _append_plotly_texts(layout, ax, "x" + suffix, "y" + host_suffix, position, x_is_date, y_is_date)
+            continue  # pas de bloc axe Y / domaine / titre pour un twin
 
         # ---- axes : domaine, labels, echelle, limites, grille ----
         position = ax.get_position()
@@ -1280,7 +1873,7 @@ def convert_figure(fig):
     # filet de securite : aucune trace produite (artiste exotique passe
     # entre les mailles) -> on retombe sur le SVG plutot qu'un graphe vide.
     if len(data) == 0:
-        return None
+        return None, _reason("empty", "Aucune trace exploitable produite")
 
     # hauteur d'affichage derivee de la taille de la figure
     size = fig.get_size_inches()
@@ -1293,4 +1886,4 @@ def convert_figure(fig):
         "layout": layout,
         "width_in": float(size[0]),
         "height_in": float(size[1]),
-    }
+    }, None
