@@ -8,7 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
-# ---- Figure 1 : relation aire-Mach (clin d'oeil) ----
+# ---- Figure 1 : relation aire-Mach ----
 gamma = 1.4
 M = np.linspace(0.1, 4.0, 400)
 A_ratio = (1.0 / M) * ((2.0 / (gamma + 1.0)) * (1.0 + (gamma - 1.0) / 2.0 * M**2)) ** ((gamma + 1.0) / (2.0 * (gamma - 1.0)))

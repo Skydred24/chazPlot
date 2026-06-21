@@ -10,10 +10,12 @@ const html = fs.readFileSync(file, "utf8");
 const placeholders = [
   "{{nonce}}", "{{cspSource}}", "{{plotlyUri}}",
   "{{errorMathUri}}", "{{insetLayoutUri}}", "{{plotNavUri}}",
+  "{{measureMathUri}}", "{{csvExportUri}}", "{{compareUtilUri}}",
+  "{{bundleMetaUri}}", "{{figureFilterUri}}",
 ];
 const requiredIds = [
   "count", "searchInput", "compareStatus", "compareSide", "compareStack",
-  "fitToggle", "saveAll", "deleteAll", "list", "empty", "overlay", "ovTitle",
+  "fitToggle", "sortSelect", "saveAll", "deleteAll", "list", "empty", "overlay", "ovTitle",
   "ovCoords", "ovClose", "ovBody", "compareOverlay", "compareTitle",
   "compareOpacityWrap", "compareOpacity", "compareClose", "errorToggle",
   "errorWarn", "errorPanel", "errorRef", "errorApply", "errorHide", "compareBody",
