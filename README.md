@@ -18,6 +18,9 @@ lecteur intégré, et tout est **persisté** d'une session à l'autre.
   double-clic pour réinitialiser. Repli automatique en **SVG** (toujours net)
   pour les figures non convertibles, et **PNG** haute résolution toujours
   généré pour l'enregistrement.
+- **Cartes de champ** : `imshow`, `pcolormesh` et nuages de points colorés
+  conservent leur **colorbar avec son titre/unité** (le label passé à
+  `colorbar(..., label=…)` est repris).
 - **Animations** matplotlib (`FuncAnimation` / `ArtistAnimation`) détectées
   automatiquement et rejouées : lecture/pause, navigation frame par frame,
   barre de navigation, vitesse 0.25×–4×.
@@ -25,18 +28,41 @@ lecteur intégré, et tout est **persisté** d'une session à l'autre.
   taille), avec redimensionnement automatique.
 - **Zoom encarté** : sélectionnez une zone et affichez-la en encart sur
   le graphe original, en plus du zoom Plotly standard.
+- **Mesures** : bouton « règle » de la modebar, puis deux clics figent deux
+  curseurs A et B. Lecture immédiate de Δx, Δy et **pente** ; si les deux
+  points sont sur la même courbe, **aire sous la courbe** (trapèzes) et
+  **min/max/moyenne** sur la plage [xA, xB]. Clic droit pour effacer.
 - **Copier** : met l'image de la figure dans le presse-papiers (collable dans
   Word, un mail, un chat…).
-- **Enregistrer / Tout enregistrer** (PNG ou SVG), **Supprimer / Tout
-  supprimer**. Les images exportées peuvent être incluses dans LaTeX/Overleaf
-  avec `\includegraphics`.
-- **Comparaison** : sélection de plusieurs graphes pour les superposer.
+- **Export CSV** : bouton « CSV » sur les figures interactives — exporte les
+  données visibles (format *tidy* `serie,x,y[,z]`, respecte le zoom courant sur
+  l'axe X). Lignes, points, barres, heatmaps et axes polaires gérés.
+- **Enregistrer / Tout enregistrer** (PNG, SVG ou **PDF** vectoriel),
+  **Supprimer / Tout supprimer**. Les images exportées peuvent être incluses
+  dans LaTeX/Overleaf avec `\includegraphics`. Le PDF est un rendu matplotlib
+  natif (fidèle, vectoriel), activable via `chazPlots.includePdf`.
+- **Bundle publication** : bouton « Bundle » → un dossier prêt pour Overleaf
+  contenant `figure.png`, `figure.svg`, **`figure.pdf`**, `metadata.json` et
+  `figure.tex` (`\includegraphics` sans extension : pdflatex prend le PDF).
+- **Comparaison** : sélection de plusieurs graphes pour les superposer ou les
+  afficher côte à côte.
+  - **Zoom synchronisé** en côte à côte : zoomer/réinitialiser un graphe applique
+    la même plage d'axes aux autres.
+  - **Sous-graphes préservés** : des figures de même structure multi-sous-graphes
+    se superposent grille par grille (au lieu du repli image).
   - **Erreur entre courbes** : en superposition, bouton « Erreur » pour tracer
     l'écart de N courbes par rapport à une référence choisie (différence signée,
     absolue, relative, relative %), dans un sous-graphe lié à axe X partagé.
     Interpolation linéaire sur la grille de la référence ; courbes non
-    superposables en Plotly (repli image) exclues.
-- **Tags & recherche** : étiquetez les figures et filtrez par titre ou tag.
+    superposables en Plotly (repli image) exclues. **Cliquez une courbe** pour
+    la désigner comme référence.
+- **Provenance** : chaque figure mémorise d'où elle vient — script + ligne du
+  `plt.show()`, dossier, interpréteur, ligne de commande, commit git (+ branche
+  et état modifié) et date complète. Affiché sous le titre (détail en infobulle)
+  et inclus dans le `metadata.json` du bundle.
+- **Tags & recherche** : étiquetez les figures ; la recherche couvre titre, tags
+  **et provenance** (nom de script, fonction, branche/commit). **Tags cliquables**
+  (clic = filtre) et **tri** par arrivée / titre / type / script / date.
 - **Persistance** : les figures (et leurs tags) réapparaissent après un Reload
   Window — pile propre à chaque workspace.
 - Option **« Ajuster à la largeur »** (sinon taille native + scroll horizontal).
@@ -74,6 +100,8 @@ Ouvrez le dossier dans VS Code et appuyez sur `F5` (« Run Extension »).
 - `chazPlots.animationDpi` (défaut `130`) — résolution de chaque frame d'animation.
 - `chazPlots.animationMaxFrames` (défaut `600`) — plafond de frames par animation ; **0 = illimité**.
 - `chazPlots.saveFormat` (défaut `png`) — format proposé par défaut.
+- `chazPlots.includePdf` (défaut `true`) — générer aussi un PDF vectoriel
+  (rendu matplotlib) pour la sauvegarde PDF et le bundle publication.
 - `chazPlots.autoReveal` (défaut `true`) — afficher le panneau à chaque figure.
 - `chazPlots.maxPersistedFigures` (défaut `200`) — figures conservées entre sessions ; **0 = illimité**.
 
@@ -94,15 +122,20 @@ plt.show()                      # lecteur d'animation dans le panneau
 
 ## Limites connues
 
+Chaque figure porte un **badge de rendu** : vert *INTERACTIF* (Plotly), ambre
+*SVG* ou orange *PNG* en cas de repli. Survolez le badge pour la raison exacte
+(artiste non géré, trop de points, SVG trop volumineux…), ce qui indique quoi
+ajuster dans le code pour récupérer l'interactivité.
+
 - **Interactif Plotly** : lignes, scatter, barres, heatmaps, `pcolormesh`,
-  `fill_between`, `errorbar`, `text()`/`annotate()`, subplots simples et `twinx`.
-- **Artistes non gérés → rendu SVG/PNG** : `contour`/`contourf`,
-  `quiver`/`streamplot`, axes polaires, 3D, `pie`, et patches libres complexes.
-- **boxplot** : converti en lignes (`Line2D`) ; utilisez
-  `plt.boxplot(..., patch_artist=True)` pour un meilleur rendu.
-- **Légende** : la position suit le `loc` matplotlib ; `bbox_to_anchor`
-  (légende hors-axes) n'est pas reproduit.
-- **twiny** (double axe X) non géré (twinx l'est : axe Y secondaire en overlay).
+  `contour`/`contourf`, `quiver`, `fill_between`, `errorbar`,
+  `text()`/`annotate()`, subplots simples, `twinx`/`twiny` et axes polaires simples.
+- **Artistes non gérés → rendu SVG/PNG** : `streamplot`, axes polaires avancés
+  (barres, images, contours polaires), 3D, `pie`, et patches libres complexes.
+- **boxplot** : moustaches et médianes sont converties en lignes ;
+  `plt.boxplot(..., patch_artist=True)` conserve aussi les boîtes remplies.
+- **Légende** : `loc` et `bbox_to_anchor` sont reproduits ; les légendes
+  très personnalisées peuvent encore différer légèrement.
 - Au-delà de ~500 000 points, ou si le SVG dépasse 8 Mo, repli automatique en PNG.
 - **Multi-fenêtres** : un fichier de port temporaire sert de repli au backend ;
   il est partagé (la dernière fenêtre démarrée « gagne »). L'injection des
@@ -143,8 +176,15 @@ panneau. Aucune dépendance Python hors matplotlib/numpy.
 ## Tests
 
 ```bash
-python test/test_convert.py    # tests d'assertion du convertisseur (unittest)
+python test/test_convert.py      # tests d'assertion du convertisseur (unittest)
 node test/test_error_curves.js   # calcul d'erreur entre courbes (assertions)
+node test/test_measure_math.js   # mesures sur courbe (pente, aire, stats)
+node test/test_csv_export.js     # construction du CSV tidy
+node test/test_compare_util.js   # synchro zoom + superposition de sous-graphes
+node test/test_bundle_meta.js    # bundle publication (metadata.json, figure.tex)
+node test/test_figure_filter.js  # recherche (provenance) + tri des figures
+node test/test_inset_layout.js   # placement de l'encart de zoom
+node test/check_panel_html.js    # garde-fou structurel du webview
 node --check extension.js storage.js
 ```
 
