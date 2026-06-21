@@ -72,6 +72,12 @@ def _dpi():
         return 200.0
 
 
+def _pdf_enabled():
+    """Generer aussi un PDF vectoriel matplotlib (env VSCODE_PLOTS_PDF, defaut 1).
+    Mis a 0 par l'extension si le reglage chazPlots.includePdf est desactive."""
+    return os.environ.get("VSCODE_PLOTS_PDF", "1") != "0"
+
+
 def _anim_dpi():
     """DPI utilise pour les frames d'animation (plus leger que le statique,
     car multiplie par le nombre de frames). Reglable via VSCODE_PLOTS_ANIM_DPI."""
@@ -229,6 +235,87 @@ def _send_figure(payload):
     return False
 
 
+# ------------------------------------------------------------
+# Provenance : d'ou vient une figure (script, ligne, env, git, date)
+# ------------------------------------------------------------
+_GIT_CACHE = {}
+
+
+def _caller_frame():
+    """Premiere frame de la pile qui n'appartient ni a ce backend ni a
+    matplotlib : c'est le code utilisateur qui a appele plt.show()."""
+    frame = sys._getframe()
+    while frame is not None:
+        name = frame.f_code.co_filename
+        in_mpl = (os.sep + "matplotlib" + os.sep) in name
+        if name != __file__ and not in_mpl and not name.startswith("<"):
+            return frame
+        frame = frame.f_back
+    return None
+
+
+def _git_info(cwd):
+    """Etat git du depot contenant cwd (commit court, branche, modifie ?).
+    Mis en cache par cwd ; tout echec (pas de git, pas un depot) -> None."""
+    if cwd in _GIT_CACHE:
+        return _GIT_CACHE[cwd]
+    info = {"git_commit": None, "git_branch": None, "git_dirty": None}
+    try:
+        import subprocess
+
+        def run(args):
+            return subprocess.run(
+                ["git"] + args, cwd=cwd,
+                capture_output=True, text=True, timeout=2.0,
+            )
+
+        head = run(["rev-parse", "--short", "HEAD"])
+        if head.returncode == 0:
+            info["git_commit"] = head.stdout.strip()
+            branch = run(["rev-parse", "--abbrev-ref", "HEAD"])
+            if branch.returncode == 0:
+                info["git_branch"] = branch.stdout.strip()
+            status = run(["status", "--porcelain"])
+            if status.returncode == 0:
+                info["git_dirty"] = bool(status.stdout.strip())
+    except Exception:
+        pass
+    _GIT_CACHE[cwd] = info
+    return info
+
+
+def _provenance():
+    """Contexte de production des figures du show() courant : script + ligne
+    d'appel, cwd, interpreteur, ligne de commande, etat git, date complete.
+    Best-effort : chaque champ indisponible reste None."""
+    import datetime
+
+    cwd = os.getcwd()
+    prov = {
+        "timestamp": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+        "cwd": cwd,
+        "python": sys.executable,
+        "python_version": sys.version.split()[0],
+        "command": " ".join(sys.argv) if sys.argv else None,
+        "script": None,
+        "source": None,
+        "line": None,
+        "function": None,
+    }
+    try:
+        if sys.argv and sys.argv[0]:
+            prov["script"] = os.path.abspath(sys.argv[0])
+    except Exception:
+        pass
+    frame = _caller_frame()
+    if frame is not None:
+        prov["source"] = frame.f_code.co_filename
+        prov["line"] = frame.f_lineno
+        prov["function"] = frame.f_code.co_name
+    prov.update(_git_info(cwd))
+    return prov
+
+
 def _figure_title(manager):
     """Titre de la figure : le window title s'il existe, sinon "Figure <num>"."""
     title = None
@@ -239,6 +326,41 @@ def _figure_title(manager):
     if title is None or title == "":
         title = "Figure " + str(manager.num)
     return title
+
+
+def _render_diag(plotly_spec, svg_bytes, plotly_reason, svg_too_big):
+    """Diagnostic de rendu transmis a l'UI (badge + raison du repli).
+
+    mode in {"plotly", "svg", "png"} ; pour un repli, code/message/detail
+    reprennent la raison renvoyee par le convertisseur (cf. convert_figure_with_reason),
+    ou signalent un SVG trop volumineux."""
+    if plotly_spec is not None:
+        return {"mode": "plotly"}
+    base = plotly_reason or {
+        "code": "unknown",
+        "message": "Rendu interactif indisponible",
+        "detail": None,
+    }
+    if svg_bytes is not None:
+        return {
+            "mode": "svg",
+            "code": base.get("code"),
+            "message": base.get("message"),
+            "detail": base.get("detail"),
+        }
+    if svg_too_big:
+        return {
+            "mode": "png",
+            "code": "svg_too_big",
+            "message": "Rendu SVG trop volumineux (> 8 Mo)",
+            "detail": base.get("message"),
+        }
+    return {
+        "mode": "png",
+        "code": base.get("code"),
+        "message": base.get("message"),
+        "detail": base.get("detail"),
+    }
 
 
 def _render(figure, file_format, dpi):
@@ -278,6 +400,10 @@ class _BackendVSCodeSpyderPlots(_Backend):
         if len(managers) == 0:
             return
 
+        # Provenance commune a toutes les figures de ce plt.show() (meme site
+        # d'appel, meme instant, meme etat git).
+        provenance = _provenance()
+
         for manager in managers:
             figure = manager.canvas.figure
             title = _figure_title(manager)
@@ -291,27 +417,43 @@ class _BackendVSCodeSpyderPlots(_Backend):
                         "title": title,
                         "frames": frames,
                         "interval": interval,
+                        "render": {"mode": "animation"},
+                        "provenance": provenance,
                     })
                     continue
                 # echec de capture -> on retombe sur un rendu statique
 
             # --- 2) figure statique ---
             plotly_spec = None
+            plotly_reason = None
             try:
-                from _mpl_to_plotly import convert_figure
-                plotly_spec = convert_figure(figure)
-            except Exception:
+                from _mpl_to_plotly import convert_figure_with_reason
+                plotly_spec, plotly_reason = convert_figure_with_reason(figure)
+            except Exception as error:
                 plotly_spec = None
+                plotly_reason = {
+                    "code": "exception",
+                    "message": "Erreur interne du convertisseur",
+                    "detail": str(error),
+                }
 
             png_bytes = _render(figure, "png", _dpi())
             svg_bytes = None
+            svg_too_big = False
             if plotly_spec is None:
                 svg_bytes = _render(figure, "svg", _dpi())
                 if svg_bytes is not None and len(svg_bytes) > _SVG_MAX_BYTES:
                     svg_bytes = None
+                    svg_too_big = True
 
             if plotly_spec is None and svg_bytes is None and png_bytes is None:
                 continue
+
+            # PDF vectoriel matplotlib (rendu natif, fidele) pour la sauvegarde
+            # PDF et le bundle publication. Optionnel (cf. _pdf_enabled).
+            pdf_bytes = _render(figure, "pdf", _dpi()) if _pdf_enabled() else None
+
+            render = _render_diag(plotly_spec, svg_bytes, plotly_reason, svg_too_big)
 
             # PGF/TikZ is intentionally not generated during capture.
             # It is fragile on complex matplotlib artists, while PNG/SVG export
@@ -322,6 +464,9 @@ class _BackendVSCodeSpyderPlots(_Backend):
                 "pgf": None,
                 "svg": base64.b64encode(svg_bytes).decode("ascii") if svg_bytes is not None else None,
                 "png": base64.b64encode(png_bytes).decode("ascii") if png_bytes is not None else None,
+                "pdf": base64.b64encode(pdf_bytes).decode("ascii") if pdf_bytes is not None else None,
+                "render": render,
+                "provenance": provenance,
             })
 
         # Comme Spyder : les figures sont consommees par show().
