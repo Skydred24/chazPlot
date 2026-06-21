@@ -92,7 +92,8 @@
   .iconbtn:focus-visible{ outline:2px solid var(--sp-accent); outline-offset:1px; }
   .iconbtn.active{ background: var(--sp-accent-soft); border-color: var(--sp-accent); opacity:1; }
   .iconbtn.has-inset{ color: var(--sp-accent); opacity:1; }
-  .iconbtn svg{ width:15px; height:15px; fill: currentColor; }
+  .iconbtn svg{ width:16px; height:16px; fill:none; stroke: currentColor;
+    stroke-width:1.3; stroke-linecap:round; stroke-linejoin:round; }
   .textbtn{
     min-width:34px; height:28px; padding:0 8px; border-radius:6px;
     font-weight:700; letter-spacing:.3px;
@@ -364,16 +365,18 @@
   const ovBody = document.getElementById("ovBody");
   const ovTitle = document.getElementById("ovTitle");
 
+  // Icones inline facon Codicon (contours fins, viewBox 16, rendu en stroke
+  // via .iconbtn svg). Memes cles : ne rien changer ailleurs.
   const ICONS = {
-    first: '<svg viewBox="0 0 16 16"><path d="M4 3.5h1.7v9H4zM12.5 3.5 6.2 8l6.3 4.5z"/></svg>',
-    prev:  '<svg viewBox="0 0 16 16"><path d="M11.5 3.5 5.2 8l6.3 4.5z"/></svg>',
-    play:  '<svg viewBox="0 0 16 16"><path d="M5 3.3v9.4l7.2-4.7z"/></svg>',
-    pause: '<svg viewBox="0 0 16 16"><path d="M4.6 3h2.3v10H4.6zM9.1 3h2.3v10H9.1z"/></svg>',
-    next:  '<svg viewBox="0 0 16 16"><path d="M4.5 3.5 10.8 8l-6.3 4.5z"/></svg>',
-    last:  '<svg viewBox="0 0 16 16"><path d="M11.9 3.5h1.7v9h-1.7zM3.5 3.5 9.8 8l-6.3 4.5z"/></svg>',
-    expand:'<svg viewBox="0 0 16 16"><path d="M2 2h5v1.7H3.7V7H2zM14 2v5h-1.7V3.7H9V2zM2 9h1.7v3.3H7V14H2zM12.3 9H14v5H9v-1.7h3.3z"/></svg>',
-    save:  '<svg viewBox="0 0 16 16"><path d="M3 2h7.6L14 5.4V14H3zm2.2 0v4.2h5V2H8.4v2.8H7.2V2zM4.4 9.2V14h7.2V9.2z"/></svg>',
-    trash: '<svg viewBox="0 0 16 16"><path d="M6 2h4l.7 1.3H14V5H2V3.3h3.3zM3.3 6h9.4l-.7 8H4z"/></svg>'
+    first: '<svg viewBox="0 0 16 16"><path d="M4 4v8M12 4 6.5 8 12 12Z"/></svg>',
+    prev:  '<svg viewBox="0 0 16 16"><path d="M10.5 4 5 8l5.5 4Z"/></svg>',
+    play:  '<svg viewBox="0 0 16 16"><path d="M5.5 3.5 12 8l-6.5 4.5Z"/></svg>',
+    pause: '<svg viewBox="0 0 16 16"><path d="M6 3.8v8.4M10 3.8v8.4"/></svg>',
+    next:  '<svg viewBox="0 0 16 16"><path d="M5.5 4 11 8l-5.5 4Z"/></svg>',
+    last:  '<svg viewBox="0 0 16 16"><path d="M4 4l5.5 4L4 12ZM12 4v8"/></svg>',
+    expand:'<svg viewBox="0 0 16 16"><path d="M6 2.5H2.5V6M10 2.5H13.5V6M13.5 10V13.5H10M2.5 10V13.5H6"/></svg>',
+    save:  '<svg viewBox="0 0 16 16"><path d="M8 2.5V9M5.3 6.7 8 9.4l2.7-2.7M3.5 11.3v1.9h9v-1.9"/></svg>',
+    trash: '<svg viewBox="0 0 16 16"><path d="M3 4.5h10M6.3 4.5V3h3.4v1.5M4.6 4.5 5.3 13.3h5.4l.7-8.8M7 7v3.8M9 7v3.8"/></svg>'
   };
 
   const figStore = {};   // id -> fig
@@ -1103,8 +1106,7 @@
       responsive: true,
       displaylogo: false,
       scrollZoom: false,
-      modeBarButtonsToRemove: ["select2d", "lasso2d"],
-      toImageButtonOptions: { format: "png", scale: 2, filename: fig.title }
+      modeBarButtonsToRemove: ["select2d", "lasso2d", "zoomIn2d", "zoomOut2d", "toImage"]
     };
   }
   // Hauteur d'un graphe en vue liste : on conserve le ratio de la figure
