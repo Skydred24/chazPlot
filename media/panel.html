@@ -9,9 +9,22 @@
 <style>
   :root{
     color-scheme: light dark;
-    --sp-radius: 8px;
-    --sp-gap: 16px;
     --sp-plot-bg: #ffffff;
+    /* surfaces & texte derives du theme */
+    --sp-surface:    var(--vscode-editorWidget-background, #252526);
+    --sp-surface-2:  var(--vscode-sideBar-background, #252526);
+    --sp-border:     var(--vscode-panel-border, #3c3c3c);
+    --sp-text:       var(--vscode-foreground, #cccccc);
+    --sp-text-dim:   color-mix(in srgb, var(--vscode-foreground, #cccccc) 62%, transparent);
+    /* accent unique */
+    --sp-accent:     var(--vscode-focusBorder, var(--vscode-charts-blue, #3794ff));
+    --sp-accent-soft: color-mix(in srgb, var(--sp-accent) 18%, transparent);
+    /* elevation, espace, rayon */
+    --sp-shadow-1: 0 1px 2px rgba(0,0,0,.16);
+    --sp-shadow-2: 0 4px 12px rgba(0,0,0,.22);
+    --sp-pad: 16px;
+    --sp-gap: 20px;
+    --sp-radius: 10px;
   }
   *{ box-sizing: border-box; }
   body{
@@ -92,24 +105,24 @@
   .coords{
     font-family: var(--vscode-editor-font-family, monospace);
     font-size:11px; opacity:1; white-space:nowrap;
-    padding:2px 8px; margin-right:2px; border-radius:5px;
-    color:#f4f1e8;
-    background: rgba(15, 23, 42, .78);
-    border:1px solid rgba(255,255,255,.16);
-    box-shadow: 0 1px 2px rgba(0,0,0,.22);
+    padding:2px 8px; margin-right:2px; border-radius:6px;
+    color: var(--sp-text);
+    background: var(--sp-surface-2);
+    border:1px solid var(--sp-border);
+    box-shadow: var(--sp-shadow-1);
     min-width:0;
   }
   .coords:empty{ background:transparent; border-color:transparent; box-shadow:none; }
   .card-head .badge{
     font-size:10px; font-weight:700; letter-spacing:.4px;
-    padding:2px 6px; border-radius:999px;
-    background: rgba(177,128,215,.28);
-    color: var(--vscode-foreground, #cccccc);
+    padding:2px 7px; border-radius:999px;
+    background: var(--sp-accent-soft);
+    color: var(--sp-text);
   }
   .card-head .spacer{ flex:1; }
   .tagrow{ display:none; gap:5px; flex-wrap:wrap; padding:6px 10px 7px 34px; border-bottom:1px solid var(--vscode-panel-border, #3c3c3c); }
   .tagrow.show{ display:flex; }
-  .tag{ font-size:10.5px; padding:2px 6px; border-radius:999px; color:#f4f1e8; background: rgba(55,148,255,.32); border:1px solid rgba(255,255,255,.14); }
+  .tag{ font-size:10.5px; padding:2px 7px; border-radius:999px; color: var(--sp-text); background: var(--sp-accent-soft); border:1px solid var(--sp-border); }
   .card.filtered{ display:none; }
 
   .imgwrap{ background: var(--sp-plot-bg); text-align:center; padding:10px; }
@@ -186,8 +199,9 @@
   }
   .compare-pane{ min-width:0; min-height:0; display:flex; flex-direction:column; background: var(--sp-plot-bg); }
   .compare-pane-title{
-    flex:0 0 auto; padding:7px 10px;
-    color:#f4f1e8; background: rgba(15, 23, 42, .9);
+    flex:0 0 auto; padding:7px 11px;
+    color: var(--sp-text); background: var(--sp-surface-2);
+    border-bottom:1px solid var(--sp-border);
     font-size:12px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
   .compare-slot{
