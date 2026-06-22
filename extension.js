@@ -375,7 +375,9 @@ async function plotlyExportOptions(fig) {
 //     revient dans finishPlotlyExport via le message exportResult.
 //   - sinon (png/svg/animation) : ecriture synchrone par writeFigure.
 async function saveOne(id, frameIndex) {
-  const fig = figures.find(function (f) { return f.id === id; });
+  const fig = (id === "compare")
+    ? { id: "compare", title: "comparaison", plotly: true, frames: null, pdf: "__present__" }
+    : figures.find(function (f) { return f.id === id; });
   if (!fig) { return; }
 
   if (fig.plotly && !fig.frames) {
@@ -396,7 +398,7 @@ async function saveOne(id, frameIndex) {
       filePath: uri.fsPath,
       title: fig.title,
       // Repli si le webview renvoie useNative (figure sans encart) : PDF matplotlib.
-      nativePdf: (isPdf && fig.pdf) ? fig.pdf : null
+      nativePdf: (isPdf && fig.pdf && fig.id !== "compare") ? fig.pdf : null
     };
     postToWebview({ type: "exportPlotly", id: fig.id, requestId: requestId, options: options });
     return;
@@ -450,7 +452,7 @@ function finishPlotlyExport(msg) {
 function saveCsv(msg) {
   if (!msg || typeof msg.csv !== "string") { return; }
   const fig = figures.find(function (f) { return f.id === msg.id; });
-  const base = fig ? defaultName(fig, "csv") : "donnees.csv";
+  const base = fig ? defaultName(fig, "csv") : (msg.id === "compare" ? "comparaison.csv" : "donnees.csv");
   vscode.window.showSaveDialog({
     defaultUri: vscode.Uri.file(path.join(workspaceDir(), base)),
     filters: { "CSV": ["csv"] }

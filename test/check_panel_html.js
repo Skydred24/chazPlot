@@ -19,6 +19,7 @@ const requiredIds = [
   "ovCoords", "ovClose", "ovBody", "compareOverlay", "compareTitle",
   "compareOpacityWrap", "compareOpacity", "compareClose", "errorToggle",
   "errorWarn", "errorPanel", "errorRef", "errorApply", "errorHide", "compareBody",
+  "compareSave", "compareCopy", "compareCsv", "compareBundle",
 ];
 
 const errors = [];

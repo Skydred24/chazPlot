@@ -370,6 +370,10 @@
       <button id="compareClose">Fermer x</button>
       <button id="errorToggle" class="compact" disabled title="Disponible uniquement en superposition interactive (Plotly) avec au moins 2 courbes">Erreur</button>
       <span class="error-warn" id="errorWarn"></span>
+      <button id="compareSave" class="compact" title="Enregistrer (PNG / SVG / PDF)">Enregistrer</button>
+      <button id="compareCopy" class="compact" title="Copier l'image dans le presse-papiers">Copier</button>
+      <button id="compareCsv" class="compact" title="Exporter les donnees visibles en CSV">CSV</button>
+      <button id="compareBundle" class="compact" title="Exporter un dossier publication">Bundle</button>
     </div>
     <div class="error-panel" id="errorPanel" style="display:none">
       <label title="Astuce : cliquez une courbe du graphe pour la choisir comme reference">Reference :
@@ -448,6 +452,7 @@
   const errorHide = document.getElementById("errorHide");
   const errorWarn = document.getElementById("errorWarn");
   let errorState = { active: false, refKey: null, types: [] };
+  let compareCurrentTitle = "comparaison";
   const overlay = document.getElementById("overlay");
   const ovBody = document.getElementById("ovBody");
   const ovTitle = document.getElementById("ovTitle");
@@ -1458,8 +1463,16 @@
         if (fig.png){ files.push({ name: "figure.png", dataUrl: "data:image/png;base64," + fig.png }); formats.push("png"); }
         if (fig.svg){ files.push({ name: "figure.svg", dataUrl: "data:image/svg+xml;base64," + fig.svg }); formats.push("svg"); }
       }
-      // PDF vectoriel matplotlib (recu du backend) : ideal pour pdflatex/Overleaf.
-      if (fig.pdf){ files.push({ name: "figure.pdf", dataUrl: "data:application/pdf;base64," + fig.pdf }); formats.push("pdf"); }
+      // PDF : natif matplotlib si disponible (figure simple), sinon raster
+      // depuis l'element vivant (comparaison / encart / erreurs).
+      if (fig.pdf && fig.pdf !== "__webview__"){
+        files.push({ name: "figure.pdf", dataUrl: "data:application/pdf;base64," + fig.pdf }); formats.push("pdf");
+      } else if (fig.plotly && el){
+        try {
+          const pdfUrl = await buildRasterPdfDataUrl(el);
+          files.push({ name: "figure.pdf", dataUrl: pdfUrl }); formats.push("pdf");
+        } catch (e) { /* PDF best-effort : on continue sans */ }
+      }
     } catch (e){
       vscodeApi.postMessage({ type: "notify", level: "error",
         text: "Chaz Plots : echec de la generation des images du bundle (" + e + ")" });
@@ -2101,6 +2114,23 @@
     return compareBody.querySelector(".compare-plot");
   }
 
+  // Descripteur leger "pseudo-figure" pour la vue comparaison : permet de
+  // reutiliser saveOne/saveCsv/saveBundle/copie sur l'element vivant fusionne.
+  // pdf = sentinelle truthy pour que le menu d'export propose le PDF (rendu raster).
+  function comparePseudoFig(){
+    const figs = selectedForCompare.map(function(id){ return figStore[id]; }).filter(Boolean);
+    const provenance = figs.map(function(f){ return f.provenance || null; }).filter(Boolean);
+    return {
+      id: "compare",
+      title: compareCurrentTitle,
+      plotly: true,
+      frames: null,
+      png: null, svg: null, pdf: "__webview__",
+      tags: [],
+      provenance: provenance.length ? { sources: provenance } : null
+    };
+  }
+
   // Rend la superposition + sous-graphe d'erreur pour une reference donnee, et
   // (re)branche le clic-sur-courbe qui change la reference. Centralise pour que
   // l'application initiale (errorApply) et le changement au clic partagent le
@@ -2324,6 +2354,7 @@
     const pendingPlots = [];
     const titleText = figs.map(function(fig){ return fig.title; }).join(" / ");
     compareTitle.textContent = (mode === "side" ? "Comparaison cote a cote : " : "Superposition : ") + titleText;
+    compareCurrentTitle = compareTitle.textContent || "comparaison";
 
     if (mode === "side"){
       const grid = document.createElement("div");
@@ -2443,6 +2474,25 @@
   overlay.addEventListener("click", function(e){ if (e.target === overlay){ closeOverlay(); } });
   document.getElementById("compareClose").addEventListener("click", closeCompare);
   compareOverlay.addEventListener("click", function(e){ if (e.target === compareOverlay){ closeCompare(); } });
+  document.getElementById("compareSave").addEventListener("click", function(){
+    if (!currentComparePlotEl()){ return; }
+    vscodeApi.postMessage({ type: "save", id: "compare" });
+  });
+  document.getElementById("compareCopy").addEventListener("click", function(){
+    const el = currentComparePlotEl();
+    if (!el){ return; }
+    Plotly.toImage(el, { format: "png", scale: 2 })
+      .then(function(url){ return dataUrlToBlob(url); })
+      .then(function(blob){ return navigator.clipboard.write([ new ClipboardItem({ "image/png": blob }) ]); })
+      .then(function(){ vscodeApi.postMessage({ type: "copied" }); })
+      .catch(function(err){ vscodeApi.postMessage({ type: "copyFailed", error: String(err) }); });
+  });
+  document.getElementById("compareCsv").addEventListener("click", function(){
+    exportCsv(currentComparePlotEl(), comparePseudoFig());
+  });
+  document.getElementById("compareBundle").addEventListener("click", function(){
+    exportBundle(currentComparePlotEl(), comparePseudoFig());
+  });
   compareSide.addEventListener("click", function(){ openCompare("side"); });
   compareStack.addEventListener("click", function(){ openCompare("stack"); });
   compareOpacity.addEventListener("input", function(){
