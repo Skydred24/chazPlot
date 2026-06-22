@@ -1605,6 +1605,29 @@
     } else {
       layout.height = listPlotHeight(el, fig);
       listPlots.push({ el: el, fig: fig });
+      // Redimensionnement fiable (changement d'ecran, maximisation, affichage
+      // du panneau) : un ResizeObserver par graphe recalcule largeur ET hauteur.
+      // Garde-fou largeur 0 (panneau masque) pour ne pas figer une taille minuscule.
+      if (typeof ResizeObserver !== "undefined" && !el._spListRO){
+        let roTimer = null;
+        el._spListRO = new ResizeObserver(function(){
+          if (roTimer){ clearTimeout(roTimer); }
+          roTimer = setTimeout(function(){
+            if (!document.body.contains(el)){
+              try { el._spListRO.disconnect(); } catch (e) {}
+              return;
+            }
+            if (!el.clientWidth){ return; }   // panneau masque : pas de mesure parasite
+            try {
+              Plotly.Plots.resize(el);
+              Plotly.relayout(el, { height: listPlotHeight(el, fig) }).then(function(){
+                if (el._spHasInset){ positionInsetOverlay(el); }
+              }).catch(function(){});
+            } catch (e) {}
+          }, 120);
+        });
+        el._spListRO.observe(el.parentElement || el);
+      }
     }
     const config = plotlyConfig(fig);
     // Bouton dedie dans la modebar Plotly : un clic (des)arme le mode encart
@@ -2495,6 +2518,11 @@
     if (card){
       if (card._player){ card._player.destroy(); }
       if (figStore[id] && figStore[id].plotly){
+        const elToFree = document.getElementById("plot-" + id);
+        if (elToFree && elToFree._spListRO){
+          try { elToFree._spListRO.disconnect(); } catch (e) {}
+          elToFree._spListRO = null;
+        }
         try { Plotly.purge(document.getElementById("plot-" + id)); } catch (e) {}
       }
       card.remove();
