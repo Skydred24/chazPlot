@@ -301,7 +301,6 @@
     cursor:pointer;
   }
   .error-panel .error-types input{ accent-color: var(--sp-accent); margin:0; }
-  .error-panel select{ margin-left:4px; }
   .error-warn{ color: var(--vscode-charts-yellow, #cca700); font-size:11px; }
   .error-summary{ font-size:11px; opacity:0.85; }
     .inset-overlay {
@@ -2111,12 +2110,14 @@
   // attenue le reste. S'appuie sur le tag _curveKey des traces.
   function highlightErrorSelection(el){
     if (!el || !el.data){ return; }
+    // Aucune selection active -> tout en opacite normale (etat initial / apres reset).
+    const noSel = !errorSelect.refKey && errorSelect.comparedKeys.length === 0;
     el.data.forEach(function(tr, i){
       const key = tr._curveKey;
       if (key === undefined){ return; }
       const isRef = key === errorSelect.refKey;
       const isCmp = errorSelect.comparedKeys.indexOf(key) !== -1;
-      const opacity = (isRef || isCmp) ? 1 : 0.25;
+      const opacity = noSel ? 1 : ((isRef || isCmp) ? 1 : 0.25);
       const width = isRef ? 3.5 : ((tr.line && tr.line.width) || 2);
       Plotly.restyle(el, { opacity: opacity, "line.width": width }, [i]);
     });
