@@ -43,10 +43,11 @@ lecteur intégré, et tout est **persisté** d'une session à l'autre.
 - **Export CSV** : bouton « CSV » sur les figures interactives — exporte les
   données visibles (format *tidy* `serie,x,y[,z]`, respecte le zoom courant sur
   l'axe X). Lignes, points, barres, heatmaps et axes polaires gérés.
-- **Enregistrer / Tout enregistrer** (PNG, SVG ou **PDF** vectoriel),
-  **Supprimer / Tout supprimer**. Les images exportées peuvent être incluses
-  dans LaTeX/Overleaf avec `\includegraphics`. Le PDF est un rendu matplotlib
-  natif (fidèle, vectoriel), activable via `chazPlots.includePdf`.
+- **Enregistrer / Tout enregistrer** (PNG, SVG ou **PDF**), **Supprimer / Tout
+  supprimer**. Les images exportées peuvent être incluses dans LaTeX/Overleaf
+  avec `\includegraphics`. Le PDF est vectoriel (rendu matplotlib natif) pour les
+  figures simples, et **raster haute résolution** (généré par le webview) pour
+  les vues avec encart, vue erreurs et vue comparaison.
 - **Bundle publication** : bouton « Bundle » → un dossier prêt pour Overleaf
   contenant `figure.png`, `figure.svg`, **`figure.pdf`**, `metadata.json` et
   `figure.tex` (`\includegraphics` sans extension : pdflatex prend le PDF).
@@ -57,11 +58,15 @@ lecteur intégré, et tout est **persisté** d'une session à l'autre.
   - **Sous-graphes préservés** : des figures de même structure multi-sous-graphes
     se superposent grille par grille (au lieu du repli image).
   - **Erreur entre courbes** : en superposition, bouton « Erreur » pour tracer
-    l'écart de N courbes par rapport à une référence choisie (différence signée,
-    absolue, relative, relative %), dans un sous-graphe lié à axe X partagé.
-    Interpolation linéaire sur la grille de la référence ; courbes non
-    superposables en Plotly (repli image) exclues. **Cliquez une courbe** pour
-    la désigner comme référence.
+    l'écart de N courbes par rapport à une référence (différence signée, absolue,
+    relative, relative %), dans un sous-graphe lié à axe X partagé. Interpolation
+    linéaire sur la grille de la référence ; courbes non superposables en Plotly
+    (repli image) exclues. **Sélection au clic** : premier clic sur une courbe =
+    référence, clics suivants = courbes à comparer (une courbe d'erreur par
+    comparée vs la référence).
+  - **Barre d'export complète en vue comparaison** : Enregistrer PNG / SVG /
+    PDF, Copier, CSV et Bundle disponibles pour la vue superposée, comme pour
+    les figures individuelles.
 - **Provenance** : chaque figure mémorise d'où elle vient — script + ligne du
   `plt.show()`, dossier, interpréteur, ligne de commande, commit git (+ branche
   et état modifié) et date complète. Affiché sous le titre (détail en infobulle)
@@ -77,14 +82,14 @@ lecteur intégré, et tout est **persisté** d'une session à l'autre.
 
 ### Paquet .vsix (recommandé)
 ```bash
-npx @vscode/vsce package          # produit chaz-plots-0.7.0.vsix
-code --install-extension chaz-plots-0.7.0.vsix
+npx @vscode/vsce package          # produit chaz-plots-0.8.0.vsix
+code --install-extension chaz-plots-0.8.0.vsix
 ```
 
 ### Sans droits administrateur (Windows)
 Aucune compilation, aucun `npm install` (extension en JavaScript pur) :
 1. Copiez le dossier dans
-   `%USERPROFILE%\.vscode\extensions\hugo.chaz-plots-0.7.0`.
+   `%USERPROFILE%\.vscode\extensions\hugo.chaz-plots-0.8.0`.
 2. Rechargez VS Code (`Ctrl+Shift+P` → « Reload Window »).
 3. Ouvrez un **nouveau terminal** (les variables d'environnement ne sont
    injectées que dans les terminaux créés après l'activation).
@@ -143,6 +148,10 @@ ajuster dans le code pour récupérer l'interactivité.
 - **Légende** : `loc` et `bbox_to_anchor` sont reproduits ; les légendes
   très personnalisées peuvent encore différer légèrement.
 - Au-delà de ~500 000 points, ou si le SVG dépasse 8 Mo, repli automatique en PNG.
+- **PDF raster pour les vues composées** : le PDF des figures avec encart, en
+  mode erreurs et en mode comparaison est **raster** (capture PNG haute résolution
+  encapsulée), pas vectoriel — l'option vectorielle (svg2pdf + jsPDF) n'a pas été
+  retenue. Le PDF vectoriel matplotlib reste disponible pour les figures simples.
 - **Multi-fenêtres** : un fichier de port temporaire sert de repli au backend ;
   il est partagé (la dernière fenêtre démarrée « gagne »). L'injection des
   variables d'environnement reste correcte par fenêtre.
@@ -167,6 +176,7 @@ chaz-plots/
 │   ├── csv_export.js                    export CSV tidy (pur)
 │   ├── compare_util.js                  zoom sync + sous-graphes (pur)
 │   ├── bundle_meta.js                   bundle publication (pur)
+│   ├── pdf_export.js                    génération PDF raster webview (pur)
 │   └── figure_filter.js                 recherche + tri des figures (pur)
 ├── python/
 │   ├── vscode_spyder_plots_backend.py   backend matplotlib (module://)
@@ -198,9 +208,24 @@ node test/test_compare_util.js   # synchro zoom + superposition de sous-graphes
 node test/test_bundle_meta.js    # bundle publication (metadata.json, figure.tex)
 node test/test_figure_filter.js  # recherche (provenance) + tri des figures
 node test/test_inset_layout.js   # placement de l'encart de zoom
+node test/test_pdf_export.js     # génération PDF raster webview
 node test/check_panel_html.js    # garde-fou structurel du webview
 node --check extension.js storage.js
 ```
+
+## Nouveautés v0.8.0
+
+- **PDF hybride** : figures simples → PDF vectoriel matplotlib (inchangé) ;
+  figures avec encart, vue erreurs et vue comparaison → **PDF raster** haute
+  résolution généré côté webview (`media/pdf_export.js` / `PdfExport.buildPdf`).
+- **Barre d'export complète en vue comparaison** : Enregistrer PNG / SVG / PDF,
+  Copier, CSV et Bundle disponibles pour la vue superposée.
+- **Sélection d'erreur au clic** : en mode erreurs, cliquer une courbe la désigne
+  comme référence ; les clics suivants désignent les courbes à comparer. Remplace
+  l'ancien menu déroulant.
+- **Correctif redimensionnement multi-écran** : la vue liste utilise désormais un
+  `ResizeObserver` pour corriger les décalages de largeur lors de changements
+  d'échelle (DPR variable, multi-écran).
 
 ## Nouveautés v0.7.0
 

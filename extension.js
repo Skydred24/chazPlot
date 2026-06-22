@@ -43,7 +43,7 @@ let server = null;         // serveur HTTP local
 let extContext = null;     // ExtensionContext (chemins, storage, env)
 let activePort = null;     // port effectivement ecoute
 let nextExportRequestId = 1; // correle un export Plotly async a sa reponse
-const pendingExports = {};   // requestId -> { filePath, title } en attente
+const pendingExports = {};   // requestId -> { filePath, title, nativePdf } en attente
 
 // ------------------------------------------------------------
 // Activation
