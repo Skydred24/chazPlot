@@ -2569,6 +2569,11 @@
       postExportResult(msg.requestId, false, null, "plot introuvable ou Plotly.toImage indisponible");
       return;
     }
+    // Figure sans spec Plotly (cas non-comparaison) : export Plotly inapplicable.
+    if (!isCompare && fig && !fig.plotly){
+      postExportResult(msg.requestId, false, null, "figure non Plotly");
+      return;
+    }
     const options = msg.options || {};
 
     // PDF : figure sans encart et hors comparaison -> PDF matplotlib natif
