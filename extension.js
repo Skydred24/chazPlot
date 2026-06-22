@@ -703,6 +703,9 @@ function webviewHtml(webview) {
   const figureFilterUri = webview.asWebviewUri(
     vscode.Uri.file(path.join(extContext.extensionPath, "media", "figure_filter.js"))
   );
+  const pdfExportUri = webview.asWebviewUri(
+    vscode.Uri.file(path.join(extContext.extensionPath, "media", "pdf_export.js"))
+  );
   const htmlPath = path.join(extContext.extensionPath, "media", "panel.html");
   let template = null;
   try {
@@ -722,7 +725,8 @@ function webviewHtml(webview) {
       .replace(/{{csvExportUri}}/g, String(csvExportUri))
       .replace(/{{compareUtilUri}}/g, String(compareUtilUri))
       .replace(/{{bundleMetaUri}}/g, String(bundleMetaUri))
-      .replace(/{{figureFilterUri}}/g, String(figureFilterUri));
+      .replace(/{{figureFilterUri}}/g, String(figureFilterUri))
+      .replace(/{{pdfExportUri}}/g, String(pdfExportUri));
   }
   // media/panel.html introuvable : l'extension est mal installee.
   return [

@@ -11,7 +11,7 @@ const placeholders = [
   "{{nonce}}", "{{cspSource}}", "{{plotlyUri}}",
   "{{errorMathUri}}", "{{insetLayoutUri}}", "{{plotNavUri}}",
   "{{measureMathUri}}", "{{csvExportUri}}", "{{compareUtilUri}}",
-  "{{bundleMetaUri}}", "{{figureFilterUri}}",
+  "{{bundleMetaUri}}", "{{figureFilterUri}}", "{{pdfExportUri}}",
 ];
 const requiredIds = [
   "count", "searchInput", "compareStatus", "compareSide", "compareStack",
