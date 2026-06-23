@@ -12,6 +12,7 @@ const placeholders = [
   "{{errorMathUri}}", "{{insetLayoutUri}}", "{{plotNavUri}}",
   "{{measureMathUri}}", "{{csvExportUri}}", "{{compareUtilUri}}",
   "{{bundleMetaUri}}", "{{figureFilterUri}}", "{{pdfExportUri}}",
+  "{{legendEditUri}}",
 ];
 const requiredIds = [
   "count", "searchInput", "compareStatus", "compareSide", "compareStack",
@@ -19,7 +20,11 @@ const requiredIds = [
   "ovCoords", "ovClose", "ovBody", "compareOverlay", "compareTitle",
   "compareOpacityWrap", "compareOpacity", "compareClose", "errorToggle",
   "errorWarn", "errorPanel", "errorApply", "errorHide", "errorReset", "errorSummary", "compareBody",
+  "keepSelToggle",
   "compareSave", "compareCopy", "compareCsv", "compareBundle",
+  "legendEditor", "leName", "leColor", "leDash", "leWidth",
+  "leSymbol", "leMarkerSize", "leBaseColors", "leAdvancedColors",
+  "leSvSquare", "leHueStrip", "leHex", "leApply", "leClose",
 ];
 
 const errors = [];

@@ -85,7 +85,7 @@
   function styleSubplotTrace(trace, label, index) {
     const out = deepClone(trace);
     out.showlegend = true;
-    out.name = label + (out.name ? " - " + out.name : "");
+    out.name = label + (out.name ? " : " + out.name : "");
     if (index > 0) {
       out.opacity = Math.min(typeof out.opacity === "number" ? out.opacity : 1, 0.78);
       if (out.line) {
@@ -105,7 +105,7 @@
   // Superpose plusieurs figures multi-sous-graphes : reprend la grille (axes +
   // domaines) de la 1re figure et empile les traces de toutes en preservant
   // leur affectation de sous-graphe. Les plages sont remises a l'autoscale.
-  function mergeSubplotFigures(figs) {
+  function mergeSubplotFigures(figs, labeler) {
     const first = figs[0];
     const layout = deepClone((first.plotly && first.plotly.layout) || {});
     layout.autosize = true;
@@ -124,7 +124,7 @@
     let widthIn = (first.plotly && first.plotly.width_in) || 7;
     let heightIn = (first.plotly && first.plotly.height_in) || 4;
     figs.forEach(function (fig, index) {
-      const label = compareLabel(index);
+      const label = (typeof labeler === "function") ? labeler(fig, index) : compareLabel(index);
       widthIn = Math.max(widthIn, (fig.plotly && fig.plotly.width_in) || 7);
       heightIn = Math.max(heightIn, (fig.plotly && fig.plotly.height_in) || 4);
       (fig.plotly && fig.plotly.data ? fig.plotly.data : []).forEach(function (trace) {

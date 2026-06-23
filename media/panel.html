@@ -202,7 +202,7 @@
   .measure-readout .measure-hint{ color: var(--sp-text-dim); font-style:italic; }
 
   .legend-editor{
-    position:fixed; right:16px; bottom:16px; z-index:70;
+    position:fixed; right:16px; bottom:16px; z-index:120;   /* au-dessus de l'overlay comparaison (z-index:100) */
     display:none; align-items:flex-end; gap:8px; flex-wrap:wrap;
     max-width:calc(100vw - 32px); padding:10px;
     border:1px solid var(--sp-border); border-radius:8px;
@@ -395,6 +395,7 @@
       <button class="compact" id="compareSide" disabled>Cote a cote</button>
       <button class="compact" id="compareStack" disabled>Superposer</button>
     </span>
+    <label class="fit" title="Conserver la sélection de figures quand de nouvelles figures arrivent (sinon elle se vide à chaque nouvelle figure)"><input type="checkbox" id="keepSelToggle"> Garder la sélection</label>
     <label class="fit"><input type="checkbox" id="fitToggle" checked> Ajuster à la largeur</label>
     <button class="primary" id="saveAll">Tout enregistrer</button>
     <button id="deleteAll">Tout supprimer</button>
@@ -435,7 +436,7 @@
       <button id="compareBundle" class="compact" title="Exporter un dossier publication">Bundle</button>
     </div>
     <div class="error-panel" id="errorPanel" style="display:none">
-      <span id="errorSummary" class="error-summary">Cliquez une courbe : 1re = référence, suivantes = à comparer.</span>
+      <span id="errorSummary" class="error-summary">Cliquez une courbe : 1re = référence, suivantes = à comparer. Ctrl+clic = nouvelle référence.</span>
       <span class="error-types">
         <label><input type="checkbox" class="error-type" value="signed"> Difference signee</label>
         <label><input type="checkbox" class="error-type" value="abs"> Erreur absolue</label>
@@ -465,9 +466,6 @@
           <div class="le-hue" id="leHueStrip"><span class="le-hue-thumb" id="leHueThumb"></span></div>
         </div>
         <label>Hex <input id="leHex" type="text" maxlength="7" spellcheck="false" value="#1f77b4"></label>
-        <label>Palette <select id="lePalette"></select></label>
-        <div class="le-swatches" id="lePaletteColors" aria-label="Couleurs de palette"></div>
-        <button class="compact" id="leApplyPalette">Appliquer palette</button>
       </div>
     </details>
     <label>Trait <select id="leDash"></select></label>
@@ -539,9 +537,12 @@
   const errorWarn = document.getElementById("errorWarn");
   const errorReset = document.getElementById("errorReset");
   const errorSummary = document.getElementById("errorSummary");
-  let errorState = { active: false, refKey: null, types: [], comparedKeys: [] };
-  // Selection au clic (panneau ouvert, avant Appliquer).
-  let errorSelect = { refKey: null, comparedKeys: [] };
+  let errorState = { active: false, groups: [], types: [] };
+  // Selection au clic (panneau ouvert, avant Appliquer). Liste de groupes :
+  // chaque groupe { ref: cle, cmps: [cle...] } = une reference et les courbes
+  // a comparer contre elle. Clic normal = ajoute une courbe au groupe courant ;
+  // Ctrl/Cmd+clic = demarre un nouveau groupe (nouvelle reference).
+  let errorSelect = { groups: [] };
   let compareCurrentTitle = "comparaison";
   const overlay = document.getElementById("overlay");
   const ovBody = document.getElementById("ovBody");
@@ -564,6 +565,10 @@
   const figStore = {};   // id -> fig
   const compareChecks = {}; // id -> checkbox
   const selectedForCompare = [];
+  // Persistance de la selection de comparaison entre lancements de scripts.
+  // Defaut OFF : la selection se vide a chaque nouvelle figure recue. La case
+  // « Garder la selection » (keepSelToggle) la rend persistante.
+  let keepCompareSelection = false;
   let comparePlayers = [];
   let searchQuery = "";  // filtre courant (titre/tags)
   let n = 0;
@@ -712,6 +717,15 @@
     const idx = selectedForCompare.indexOf(id);
     if (idx !== -1){ selectedForCompare.splice(idx, 1); }
     delete compareChecks[id];
+    updateCompareToolbar();
+  }
+
+  // Vide la selection de comparaison (sauf si l'utilisateur a coche « Garder
+  // la selection »). Appelee a l'arrivee d'une nouvelle figure.
+  function clearCompareSelectionUnlessKept(){
+    if (keepCompareSelection || selectedForCompare.length === 0){ return; }
+    selectedForCompare.length = 0;
+    syncCompareChecks();
     updateCompareToolbar();
   }
 
@@ -1707,22 +1721,11 @@
     });
   }
 
-  function refreshPaletteSwatches(){
-    if (typeof LegendEdit === "undefined"){ return; }
-    const select = document.getElementById("lePalette");
-    const colors = LegendEdit.paletteColors(select ? select.value : "tab10");
-    renderColorSwatches(document.getElementById("lePaletteColors"), colors);
-  }
-
   (function initLegendEditor(){
     if (typeof LegendEdit === "undefined"){ return; }
     fillLegendSelect(document.getElementById("leDash"), LegendEdit.LINE_DASHES);
     fillLegendSelect(document.getElementById("leSymbol"), LegendEdit.MARKER_SYMBOLS);
-    fillLegendSelect(document.getElementById("lePalette"), LegendEdit.PALETTES);
     renderColorSwatches(document.getElementById("leBaseColors"), LegendEdit.BASE_COLORS);
-    refreshPaletteSwatches();
-    const pal = document.getElementById("lePalette");
-    if (pal){ pal.addEventListener("change", refreshPaletteSwatches); }
   })();
 
   function closeLegendEditor(){
@@ -1752,6 +1755,24 @@
 
   function persistLegendPatch(el, idx, patch){
     if (el._spBaseData && el._spBaseData[idx]){ LegendEdit.applyPatch(el._spBaseData[idx], patch); }
+    const tr = el.data && el.data[idx];
+    // Vue comparaison/erreur : la trace porte sa figure + index source. On
+    // ecrit l'edition dans la figure source (sauf le nom : il est prefixe par
+    // le label de comparaison, on ne le repercute pas) pour qu'elle survive aux
+    // re-renders (Appliquer erreur, zoom, resize).
+    if (tr && tr._srcFigId !== undefined && tr._srcFigId !== null){
+      const srcFig = figStore[tr._srcFigId];
+      const ti = tr._srcTraceIndex;
+      if (srcFig && srcFig.plotly && srcFig.plotly.data && srcFig.plotly.data[ti]){
+        const safe = {};
+        Object.keys(patch).forEach(function(k){ if (k !== "name"){ safe[k] = patch[k]; } });
+        if (Object.keys(safe).length){
+          LegendEdit.applyPatch(srcFig.plotly.data[ti], safe);
+          vscodeApi.postMessage({ type: "updateFigure", id: tr._srcFigId, traceIndex: ti, patch: safe });
+        }
+      }
+      return;
+    }
     const m = /^plot-(\d+)$/.exec(el.id || "");
     if (!m){ return; }
     const id = parseInt(m[1], 10);
@@ -1782,21 +1803,6 @@
     });
     restyleLegendTrace(el, idx, patch);
     closeLegendEditor();
-  });
-
-  document.getElementById("leApplyPalette").addEventListener("click", function(){
-    const el = legendEditTarget.el;
-    if (!el || !el.data || typeof LegendEdit === "undefined"){ return; }
-    const select = document.getElementById("lePalette");
-    const colors = LegendEdit.paletteColors(select ? select.value : "tab10");
-    if (!colors.length){ return; }
-    let colorIndex = 0;
-    (el.data || []).forEach(function(trace, i){
-      if (trace && trace._spMeasure){ return; }
-      const color = colors[colorIndex % colors.length];
-      colorIndex = colorIndex + 1;
-      restyleLegendTrace(el, i, LegendEdit.buildRestyle({ color: color }));
-    });
   });
 
   function plotlyConfig(fig){
@@ -1968,6 +1974,60 @@
     el.addEventListener("pointerup", endPan);
     el.addEventListener("pointercancel", endPan);
   }
+
+  // Auto-echelle des axes Y sur la plage X visible : evite qu'un pic lointain
+  // (ex. 1000 %) ecrase le reste (1 %) quand on zoome sur une zone sans le pic.
+  // Recale CHAQUE axe Y independamment sur ses propres traces visibles : l'axe
+  // principal (y) ET le sous-graphe d'erreur (y2) — ce dernier, souvent proche
+  // de 0, obtient ainsi sa propre echelle precise. L'axe X reste partage (lien
+  // entre sous-graphes). Numerique uniquement (axes log/date non recalcules).
+  function autoScaleY(el){
+    if (!el || !el._fullLayout || !el.data){ return; }
+    const xa = el._fullLayout.xaxis;
+    if (!xa || !xa.range){ return; }
+    const x0 = Math.min(xa.range[0], xa.range[1]);
+    const x1 = Math.max(xa.range[0], xa.range[1]);
+    const relayout = {};
+    // Recale chaque axe Y present (y, y2, ...) sur ses propres traces.
+    Object.keys(el._fullLayout).forEach(function(axName){
+      if (!/^yaxis[0-9]*$/.test(axName)){ return; }
+      const ya = el._fullLayout[axName];
+      if (!ya || ya.type === "log"){ return; }
+      const axLetter = "y" + axName.slice(5);   // "yaxis"->"y", "yaxis2"->"y2"
+      let lo = Infinity, hi = -Infinity;
+      el.data.forEach(function(tr){
+        if (!tr || tr.visible === "legendonly"){ return; }
+        if ((tr.yaxis || "y") !== axLetter){ return; }
+        const xs = tr.x, ys = tr.y;
+        if (!xs || !ys){ return; }
+        const n = Math.min(xs.length, ys.length);
+        for (let i = 0; i < n; i++){
+          const xv = xs[i];
+          const xn = (xv instanceof Date) ? xv.getTime() : xv;
+          if (typeof xn !== "number" || xn < x0 || xn > x1){ continue; }
+          const yv = ys[i];
+          if (typeof yv !== "number" || !isFinite(yv)){ continue; }
+          if (yv < lo){ lo = yv; }
+          if (yv > hi){ hi = yv; }
+        }
+      });
+      if (lo === Infinity){ return; }
+      if (lo === hi){ const pad = Math.abs(lo) || 1; lo -= pad * 0.05; hi += pad * 0.05; }
+      else { const pad = (hi - lo) * 0.06; lo -= pad; hi += pad; }
+      relayout[axName + ".range"] = [lo, hi];
+    });
+    if (!Object.keys(relayout).length){ return; }
+    el._spAutoYApplying = true;
+    Promise.resolve(Plotly.relayout(el, relayout))
+      .then(function(){ el._spAutoYApplying = false; })
+      .catch(function(){ el._spAutoYApplying = false; });
+  }
+
+  function setAutoYFeedback(el, coordsEl){
+    if (el.parentElement){ el.parentElement.classList.toggle("sp-autoy-on", !!el._spAutoY); }
+    if (coordsEl){ coordsEl.textContent = el._spAutoY ? "Auto-échelle Y activée" : "Auto-échelle Y désactivée"; }
+  }
+
   function renderPlotly(el, fig, fill, coordsEl){
     if (!fig.plotly || !el || typeof Plotly === "undefined"){ return; }
     const layout = JSON.parse(JSON.stringify(fig.plotly.layout || {}));
@@ -2049,6 +2109,16 @@
         }
         setLegendEditFeedback(gd, coordsEl);
       }
+    }, {
+      name: "autoY",
+      title: "Auto-echelle Y sur la zone X visible (active par defaut ; cliquer pour activer/desactiver)",
+      // Icone "double fleche verticale" = recadrage de l'axe Y.
+      icon: { width: 16, height: 16, path: "M8 1 L4 6 L7 6 L7 10 L4 10 L8 15 L12 10 L9 10 L9 6 L12 6 Z" },
+      click: function(gd){
+        gd._spAutoY = !gd._spAutoY;
+        setAutoYFeedback(gd, coordsEl);
+        if (gd._spAutoY){ autoScaleY(gd); }
+      }
     }];
     el._spFig = fig;
     el._spCoordsEl = coordsEl;
@@ -2056,11 +2126,18 @@
     el._spBaseLayout = clone(layout);
     el._spConfig = config;
     el._spHasInset = false;
+    if (el._spAutoY === undefined){ el._spAutoY = true; }   // auto-echelle Y activee par defaut
     Plotly.newPlot(el, data, layout, config);
     attachPlotNav(el);
     attachMeasure(el);
     if (el.on){
       el.on("plotly_relayout", function(update){
+        // Auto-echelle Y : si on vient de zoomer/deplacer en X, recaler Y sur
+        // les donnees visibles (sauf double-clic = autorange gere par Plotly).
+        if (el._spAutoY && !el._spAutoYApplying){
+          const xMoved = ("xaxis.range[0]" in update) || ("xaxis.range" in update);
+          if (xMoved && !update["xaxis.autorange"]){ autoScaleY(el); }
+        }
         // Mode encart arme par Ctrl+clic sur la loupe : le trace de zoom
         // devient un encart au lieu d'un zoom normal.
         if (!el._spInsetArmed){ return; }
@@ -2485,14 +2562,16 @@
   function refreshErrorSummary(){
     const figs = selectedForCompare.map(function(id){ return figStore[id]; }).filter(Boolean);
     const curves = flattenCurves(figs);
-    if (!errorSelect.refKey){
-      errorSummary.textContent = "Cliquez une courbe : 1re = référence, suivantes = à comparer.";
+    if (!errorSelect.groups.length){
+      errorSummary.textContent = "Cliquez une courbe : 1re = référence, suivantes = à comparer. Ctrl+clic = nouvelle référence.";
       return;
     }
-    const ref = curveLabelByKey(curves, errorSelect.refKey);
-    const cmp = errorSelect.comparedKeys.map(function(k){ return curveLabelByKey(curves, k); });
-    errorSummary.textContent = "Réf : " + ref +
-      " • Comparées : " + (cmp.length ? cmp.join(", ") : "—");
+    const parts = errorSelect.groups.map(function(g){
+      const ref = curveLabelByKey(curves, g.ref);
+      const cmps = g.cmps.map(function(k){ return curveLabelByKey(curves, k); });
+      return "[réf " + ref + " → " + (cmps.length ? cmps.join(", ") : "—") + "]";
+    });
+    errorSummary.textContent = "Couples : " + parts.join(" ");
   }
 
   // Met en avant la reference (epaisse) et les comparees (pleine opacite),
@@ -2500,25 +2579,43 @@
   function highlightErrorSelection(el){
     if (!el || !el.data){ return; }
     // Aucune selection active -> tout en opacite normale (etat initial / apres reset).
-    const noSel = !errorSelect.refKey && errorSelect.comparedKeys.length === 0;
+    const refs = errorSelect.groups.map(function(g){ return g.ref; });
+    const cmps = errorSelect.groups.reduce(function(acc, g){ return acc.concat(g.cmps); }, []);
+    const noSel = refs.length === 0;
     el.data.forEach(function(tr, i){
       const key = tr._curveKey;
       if (key === undefined){ return; }
-      const isRef = key === errorSelect.refKey;
-      const isCmp = errorSelect.comparedKeys.indexOf(key) !== -1;
+      const isRef = refs.indexOf(key) !== -1;
+      const isCmp = cmps.indexOf(key) !== -1;
       const opacity = noSel ? 1 : ((isRef || isCmp) ? 1 : 0.25);
       const width = isRef ? 3.5 : ((tr.line && tr.line.width) || 2);
       Plotly.restyle(el, { opacity: opacity, "line.width": width }, [i]);
     });
   }
 
-  // Regle unifiee du clic sur une courbe de cle k.
-  function toggleErrorSelection(key){
-    if (key === errorSelect.refKey){ errorSelect.refKey = null; return; }
-    const idx = errorSelect.comparedKeys.indexOf(key);
-    if (idx !== -1){ errorSelect.comparedKeys.splice(idx, 1); return; }
-    if (!errorSelect.refKey){ errorSelect.refKey = key; return; }
-    errorSelect.comparedKeys.push(key);
+  function lastErrorGroup(){
+    const g = errorSelect.groups;
+    return g.length ? g[g.length - 1] : null;
+  }
+
+  // Regle du clic sur une courbe de cle k. newRef = Ctrl/Cmd maintenu :
+  // demarre un nouveau groupe (nouvelle reference).
+  function toggleErrorSelection(key, newRef){
+    const groups = errorSelect.groups;
+    if (newRef){
+      // Re-Ctrl+clic sur une reference existante : retire ce groupe (toggle).
+      for (let i = 0; i < groups.length; i++){
+        if (groups[i].ref === key){ groups.splice(i, 1); return; }
+      }
+      groups.push({ ref: key, cmps: [] });
+      return;
+    }
+    const g = lastErrorGroup();
+    if (!g){ groups.push({ ref: key, cmps: [] }); return; }  // 1er clic = 1re reference
+    if (key === g.ref){ groups.pop(); return; }              // re-clic sur la ref courante = annule le groupe
+    const idx = g.cmps.indexOf(key);
+    if (idx !== -1){ g.cmps.splice(idx, 1); return; }         // re-clic sur une comparee = retire
+    g.cmps.push(key);
   }
 
   function bindSelectionClick(el){
@@ -2528,7 +2625,8 @@
       const pt = ev && ev.points && ev.points[0];
       const key = pt && pt.data && pt.data._curveKey;
       if (key === undefined || key === null){ return; }
-      toggleErrorSelection(key);
+      const newRef = !!(ev && ev.event && (ev.event.ctrlKey || ev.event.metaKey));
+      toggleErrorSelection(key, newRef);
       refreshErrorSummary();
       highlightErrorSelection(el);
     });
@@ -2539,8 +2637,8 @@
     // Repart de la superposition simple pour selectionner au clic.
     const el = currentComparePlotEl();
     if (el){
-      errorState = { active: false, refKey: null, types: [], comparedKeys: [] };
-      errorSelect = { refKey: null, comparedKeys: [] };
+      errorState = { active: false, groups: [], types: [] };
+      errorSelect = { groups: [] };
       const merged = mergedPlotlyFigure(figs);
       Plotly.purge(el);
       renderPlotly(el, merged, true, null);
@@ -2578,11 +2676,11 @@
     };
   }
 
-  function applyError(figs, refKey, types, comparedKeys){
+  function applyError(figs, groups, types){
     const el = currentComparePlotEl();
     if (!el){ return; }
-    errorState = { active: true, refKey: refKey, types: types, comparedKeys: comparedKeys };
-    const merged = mergedPlotlyFigureWithErrors(figs, refKey, types, comparedKeys);
+    errorState = { active: true, groups: groups, types: types };
+    const merged = mergedPlotlyFigureWithErrors(figs, groups, types);
     errorPanel.style.display = "none";
     Plotly.purge(el);
     renderPlotly(el, merged, true, null);
@@ -2597,15 +2695,15 @@
     const types = Array.prototype.slice
       .call(document.querySelectorAll(".error-type:checked"))
       .map(function(cb){ return cb.value; });
-    if (!errorSelect.refKey){ errorWarn.textContent = "Cliquez une courbe de référence."; return; }
-    if (errorSelect.comparedKeys.length === 0){ errorWarn.textContent = "Cliquez au moins une courbe à comparer."; return; }
+    const usable = errorSelect.groups.filter(function(g){ return g.cmps.length > 0; });
+    if (!usable.length){ errorWarn.textContent = "Formez au moins un couple (réf puis courbe à comparer)."; return; }
     if (types.length === 0){ errorWarn.textContent = "Cochez au moins un type d'erreur."; return; }
     if (!currentComparePlotEl()){ return; }
-    applyError(figs, errorSelect.refKey, types, errorSelect.comparedKeys.slice());
+    applyError(figs, usable, types);
   });
 
   errorReset.addEventListener("click", function(){
-    errorSelect = { refKey: null, comparedKeys: [] };
+    errorSelect = { groups: [] };
     errorWarn.textContent = "";
     refreshErrorSummary();
     const el = currentComparePlotEl();
@@ -2616,7 +2714,7 @@
     const figs = selectedForCompare.map(function(id){ return figStore[id]; }).filter(Boolean);
     const el = currentComparePlotEl();
     if (!el){ return; }
-    errorState = { active: false, refKey: null, types: [], comparedKeys: [] };
+    errorState = { active: false, groups: [], types: [] };
     errorWarn.textContent = "";
     const merged = mergedPlotlyFigure(figs);
     errorPanel.style.display = "none";
@@ -2679,10 +2777,15 @@
     figs.forEach(function(fig, index){
       widthIn = Math.max(widthIn, fig.plotly.width_in || 7);
       heightIn = Math.max(heightIn, fig.plotly.height_in || 4);
-      fig.plotly.data.forEach(function(trace){
+      fig.plotly.data.forEach(function(trace, tIdx){
         const out = overlayTrace(trace, fig.title, index);
         // Cle de courbe (pour designer la reference d'erreur en cliquant la trace).
         if (isFlattenCurve(trace)){ out._curveKey = "c" + curveKey; curveKey++; }
+        // Back-mapping vers la figure source : permet a persistLegendPatch
+        // d'ecrire une edition de legende (couleur...) dans la bonne figure
+        // depuis la vue comparaison/erreur (parite avec le mode normal).
+        out._srcFigId = fig.id;
+        out._srcTraceIndex = tIdx;
         data.push(out);
       });
     });
@@ -2697,18 +2800,17 @@
     return typeIds.length > 0 && typeIds.every(function(t){ return t === "relpct"; });
   }
 
-  // Superposition + sous-graphe d'erreur empile dessous : courbe(s) d'ecart par
-  // rapport a la reference refKey, pour les types coches (typeIds : signed/abs/
-  // rel/relpct ; calcul dans ErrorMath). Le panneau du haut garde (x, y), le
-  // bas reutilise x et ajoute yaxis2. Voir openErrorPanel pour l'orchestration.
-  function mergedPlotlyFigureWithErrors(figs, refKey, typeIds, comparedKeys){
+  // Superposition + sous-graphe d'erreur empile dessous. groups = liste de
+  // { ref, cmps:[...] } : pour chaque groupe, on trace l'ecart de chaque courbe
+  // comparee vs SA reference, pour les types coches (typeIds : signed/abs/rel/
+  // relpct ; calcul dans ErrorMath). Le panneau du haut garde (x, y), le bas
+  // reutilise x et ajoute yaxis2. Voir openErrorPanel pour l'orchestration.
+  function mergedPlotlyFigureWithErrors(figs, groups, typeIds){
     const base = mergedPlotlyFigure(figs);
     const layout = base.plotly.layout;
     const curves = flattenCurves(figs);
-    const ref = curves.filter(function(c){ return c.key === refKey; })[0] || curves[0];
-    const compareSet = (comparedKeys && comparedKeys.length)
-      ? comparedKeys
-      : curves.filter(function(c){ return c.key !== ref.key; }).map(function(c){ return c.key; });
+    const byKey = {};
+    curves.forEach(function(c){ byKey[c.key] = c; });
 
     // Vrai sous-graphe empile : x partage, repartition ~45 / 48 (panneau
     // d'erreur agrandi) avec un ecart franc entre les deux panneaux. L'axe X
@@ -2728,25 +2830,31 @@
 
     const data = base.plotly.data;
     const ignored = [];
-    curves.forEach(function(c){
-      if (c.key === ref.key){ return; }
-      if (compareSet.indexOf(c.key) === -1){ return; }   // seulement les courbes choisies
-      let produced = 0;
-      typeIds.forEach(function(typeId){
-        const series = ErrorMath.buildErrorSeries(typeId, ref.x, ref.y, c.x, c.y);
-        if (series.y.every(function(v){ return v === null; })){ return; }
-        const meta = ErrorMath.ERROR_TYPES[typeId];
-        data.push({
-          type: "scatter", mode: "lines",
-          x: series.x, y: series.y,
-          xaxis: "x", yaxis: "y2",
-          connectgaps: false,
-          line: c.color ? { color: c.color } : {},
-          name: c.letter + "−" + ref.letter + " : " + c.name + " (" + meta.abbr + ")"
+    // Pour chaque groupe (une reference), tracer l'ecart de chaque courbe
+    // comparee vs CETTE reference, pour chaque type coche.
+    groups.forEach(function(g){
+      const ref = byKey[g.ref];
+      if (!ref){ return; }
+      g.cmps.forEach(function(cmpKey){
+        const c = byKey[cmpKey];
+        if (!c || c.key === ref.key){ return; }
+        let produced = 0;
+        typeIds.forEach(function(typeId){
+          const series = ErrorMath.buildErrorSeries(typeId, ref.x, ref.y, c.x, c.y);
+          if (series.y.every(function(v){ return v === null; })){ return; }
+          const meta = ErrorMath.ERROR_TYPES[typeId];
+          data.push({
+            type: "scatter", mode: "lines",
+            x: series.x, y: series.y,
+            xaxis: "x", yaxis: "y2",
+            connectgaps: false,
+            line: c.color ? { color: c.color } : {},
+            name: c.letter + "−" + ref.letter + " : " + c.name + " (" + meta.abbr + ")"
+          });
+          produced++;
         });
-        produced++;
+        if (produced === 0 && ignored.indexOf(c.letter) === -1){ ignored.push(c.letter); }
       });
-      if (produced === 0 && ignored.indexOf(c.letter) === -1){ ignored.push(c.letter); }
     });
     base._ignored = ignored;
     return base;
@@ -2842,7 +2950,7 @@
     }, 30);
   }
   function closeCompare(){
-    errorState = { active: false, refKey: null, types: [] };
+    errorState = { active: false, groups: [], types: [] };
     errorPanel.style.display = "none";
     errorToggle.disabled = true;
     compareOverlay.classList.remove("show");
@@ -3132,6 +3240,7 @@
     if (msg.type === "exportPlotly"){
       exportPlotly(msg);
     } else if (msg.type === "add"){
+      clearCompareSelectionUnlessKept();   // nouvelle figure -> vide la selection (sauf mode "Garder")
       list.appendChild(makeCard(msg.fig));
       afterAttach(msg.fig);
       n = n + 1; refreshCount();
@@ -3185,6 +3294,10 @@
   document.getElementById("fitToggle").addEventListener("change", function(e){
     document.body.classList.toggle("no-fit", !e.target.checked);
     resizeListPlots();
+  });
+
+  document.getElementById("keepSelToggle").addEventListener("change", function(e){
+    keepCompareSelection = !!e.target.checked;
   });
 
   refreshCount();
