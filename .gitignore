@@ -16,6 +16,9 @@ env/
 # Brouillons de travail (plans/agents superpowers) — jamais versionnés
 .superpowers/
 
+# Graphe de code genere par graphify (artefact local, non versionne)
+graphify-out/
+
 # Docs internes / config IA — non destinées à un utilisateur externe
 .claude/
 CLAUDE.md
