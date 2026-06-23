@@ -2,7 +2,7 @@
   "name": "chaz-plots",
   "displayName": "Chaz Plots",
   "description": "Panneau de graphes matplotlib façon Spyder : plt.show() envoie les figures (et les animations) dans un panneau VS Code scrollable, avec lecteur d'animation, mode agrandir, enregistrer / tout enregistrer / supprimer / tout supprimer.",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "publisher": "hugo",
   "engines": {
     "vscode": "^1.75.0"
