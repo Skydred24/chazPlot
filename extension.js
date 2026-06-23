@@ -261,6 +261,18 @@ function updateFigureTrace(id, traceIndex, patch) {
   try { storage.save(fig); } catch (e) { /* best-effort */ }
 }
 
+// Persiste une edition de layout (titre du graphe, labels d'axes) faite au
+// clic dans le webview (Plotly editable). patch = cles pointees, ex.
+// { "title.text": "...", "xaxis.title.text": "..." }.
+function updateFigureLayout(id, patch) {
+  const fig = figures.find(function (f) { return f.id === id; });
+  if (!fig || !fig.plotly || !patch || typeof patch !== "object") { return; }
+  if (!fig.plotly.layout) { fig.plotly.layout = {}; }
+  LegendEdit.applyPatch(fig.plotly.layout, patch);
+  fig.edited = true;   // PDF natif perime -> export raster (comme l'edition de legende)
+  try { storage.save(fig); } catch (e) { /* best-effort */ }
+}
+
 function editTags(id) {
   const fig = figures.find(function (f) { return f.id === id; });
   if (!fig) { return; }
@@ -637,6 +649,7 @@ function setupPanel(p) {
     }
     else if (msg.type === "updateTags") { updateTags(msg.id, msg.tags); }
     else if (msg.type === "updateFigure") { updateFigureTrace(msg.id, msg.traceIndex, msg.patch); }
+    else if (msg.type === "updateFigureLayout") { updateFigureLayout(msg.id, msg.patch); }
     else if (msg.type === "editTags") { editTags(msg.id); }
     else if (msg.type === "saveAll") { saveAll(); }
     else if (msg.type === "delete") { deleteOne(msg.id); }
@@ -731,6 +744,9 @@ function webviewHtml(webview) {
   const legendEditUri = webview.asWebviewUri(
     vscode.Uri.file(path.join(extContext.extensionPath, "media", "legend_edit.js"))
   );
+  const autoscaleUri = webview.asWebviewUri(
+    vscode.Uri.file(path.join(extContext.extensionPath, "media", "autoscale.js"))
+  );
   const htmlPath = path.join(extContext.extensionPath, "media", "panel.html");
   let template = null;
   try {
@@ -752,7 +768,8 @@ function webviewHtml(webview) {
       .replace(/{{bundleMetaUri}}/g, String(bundleMetaUri))
       .replace(/{{figureFilterUri}}/g, String(figureFilterUri))
       .replace(/{{pdfExportUri}}/g, String(pdfExportUri))
-      .replace(/{{legendEditUri}}/g, String(legendEditUri));
+      .replace(/{{legendEditUri}}/g, String(legendEditUri))
+      .replace(/{{autoscaleUri}}/g, String(autoscaleUri));
   }
   // media/panel.html introuvable : l'extension est mal installee.
   return [

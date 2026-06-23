@@ -14,6 +14,7 @@
 <script src="{{figureFilterUri}}"></script>
 <script src="{{pdfExportUri}}"></script>
 <script src="{{legendEditUri}}"></script>
+<script src="{{autoscaleUri}}"></script>
 <style>
   :root{
     color-scheme: light dark;
@@ -1788,6 +1789,29 @@
     persistLegendPatch(el, idx, patch);
   }
 
+  // Edition de titre / labels d'axes (Plotly editable) : l'utilisateur tape
+  // directement par-dessus le texte, Plotly emet un plotly_relayout avec
+  // title.text / xaxis.title.text / yaxis.title.text. On persiste dans la
+  // figure source (vue liste). En comparaison (pas d'id plot-N), l'edition
+  // reste vivante mais non persistee (le titre fusionne n'appartient a aucune
+  // figure source). Reutilise LegendEdit.applyPatch (cles pointees).
+  function persistLayoutEdits(el, update){
+    const patch = {};
+    ["title.text", "xaxis.title.text", "yaxis.title.text"].forEach(function(k){
+      if (k in update){ patch[k] = update[k]; }
+    });
+    if (!Object.keys(patch).length){ return; }
+    if (el._spBaseLayout){ LegendEdit.applyPatch(el._spBaseLayout, patch); }
+    const m = /^plot-(\d+)$/.exec(el.id || "");
+    if (!m){ return; }
+    const id = parseInt(m[1], 10);
+    const fig = figStore[id];
+    if (!fig || !fig.plotly){ return; }
+    if (!fig.plotly.layout){ fig.plotly.layout = {}; }
+    LegendEdit.applyPatch(fig.plotly.layout, patch);
+    vscodeApi.postMessage({ type: "updateFigureLayout", id: id, patch: patch });
+  }
+
   document.getElementById("leClose").addEventListener("click", closeLegendEditor);
   document.getElementById("leApply").addEventListener("click", function(){
     const el = legendEditTarget.el;
@@ -1810,7 +1834,7 @@
       responsive: true,
       displaylogo: false,
       scrollZoom: false,
-      edits: { legendPosition: true },
+      edits: { legendPosition: true, titleText: true, axisTitleText: true },
       modeBarButtonsToRemove: ["select2d", "lasso2d", "zoomIn2d", "zoomOut2d", "toImage"]
     };
   }
@@ -1982,43 +2006,27 @@
   // de 0, obtient ainsi sa propre echelle precise. L'axe X reste partage (lien
   // entre sous-graphes). Numerique uniquement (axes log/date non recalcules).
   function autoScaleY(el){
-    if (!el || !el._fullLayout || !el.data){ return; }
+    if (!el || !el._fullLayout || !el.data || typeof AutoScale === "undefined"){ return; }
     const xa = el._fullLayout.xaxis;
     if (!xa || !xa.range){ return; }
     const x0 = Math.min(xa.range[0], xa.range[1]);
     const x1 = Math.max(xa.range[0], xa.range[1]);
-    const relayout = {};
-    // Recale chaque axe Y present (y, y2, ...) sur ses propres traces.
+    // Decrit les axes Y presents (y, y2, ...) et les traces ; la math (etendue
+    // visible + marge, par axe) vit dans le module pur AutoScale.
+    const axes = [];
     Object.keys(el._fullLayout).forEach(function(axName){
       if (!/^yaxis[0-9]*$/.test(axName)){ return; }
       const ya = el._fullLayout[axName];
-      if (!ya || ya.type === "log"){ return; }
-      const axLetter = "y" + axName.slice(5);   // "yaxis"->"y", "yaxis2"->"y2"
-      let lo = Infinity, hi = -Infinity;
-      el.data.forEach(function(tr){
-        if (!tr || tr.visible === "legendonly"){ return; }
-        if ((tr.yaxis || "y") !== axLetter){ return; }
-        const xs = tr.x, ys = tr.y;
-        if (!xs || !ys){ return; }
-        const n = Math.min(xs.length, ys.length);
-        for (let i = 0; i < n; i++){
-          const xv = xs[i];
-          const xn = (xv instanceof Date) ? xv.getTime() : xv;
-          if (typeof xn !== "number" || xn < x0 || xn > x1){ continue; }
-          const yv = ys[i];
-          if (typeof yv !== "number" || !isFinite(yv)){ continue; }
-          if (yv < lo){ lo = yv; }
-          if (yv > hi){ hi = yv; }
-        }
-      });
-      if (lo === Infinity){ return; }
-      if (lo === hi){ const pad = Math.abs(lo) || 1; lo -= pad * 0.05; hi += pad * 0.05; }
-      else { const pad = (hi - lo) * 0.06; lo -= pad; hi += pad; }
-      relayout[axName + ".range"] = [lo, hi];
+      if (!ya){ return; }
+      axes.push({ name: axName, letter: "y" + axName.slice(5), log: ya.type === "log" });
     });
-    if (!Object.keys(relayout).length){ return; }
+    const traces = (el.data || []).map(function(tr){
+      return { yaxis: tr.yaxis, x: tr.x, y: tr.y, hidden: tr.visible === "legendonly" };
+    });
+    const patch = AutoScale.visibleYRanges(axes, traces, x0, x1);
+    if (!Object.keys(patch).length){ return; }
     el._spAutoYApplying = true;
-    Promise.resolve(Plotly.relayout(el, relayout))
+    Promise.resolve(Plotly.relayout(el, patch))
       .then(function(){ el._spAutoYApplying = false; })
       .catch(function(){ el._spAutoYApplying = false; });
   }
@@ -2138,6 +2146,8 @@
           const xMoved = ("xaxis.range[0]" in update) || ("xaxis.range" in update);
           if (xMoved && !update["xaxis.autorange"]){ autoScaleY(el); }
         }
+        // Edition d'un titre / label d'axe (Plotly editable) -> persister.
+        persistLayoutEdits(el, update);
         // Mode encart arme par Ctrl+clic sur la loupe : le trace de zoom
         // devient un encart au lieu d'un zoom normal.
         if (!el._spInsetArmed){ return; }
