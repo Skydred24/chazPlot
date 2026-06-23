@@ -230,6 +230,30 @@
   .le-advanced{ min-width:230px; color:var(--sp-text); }
   .le-advanced summary{ cursor:pointer; font-size:11px; color:var(--sp-text-dim); margin-bottom:6px; }
   .le-advanced-body{ display:flex; align-items:flex-end; gap:8px; flex-wrap:wrap; }
+  .le-picker { display: flex; gap: 8px; margin: 6px 0; }
+  .le-sv {
+    position: relative; width: 160px; height: 110px; border-radius: 6px;
+    background-image:
+      linear-gradient(to top, #000, rgba(0, 0, 0, 0)),
+      linear-gradient(to right, #fff, rgba(255, 255, 255, 0));
+    background-color: #ff0000; cursor: crosshair; touch-action: none;
+  }
+  .le-sv-thumb {
+    position: absolute; width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+    transform: translate(-50%, -50%); pointer-events: none;
+  }
+  .le-hue {
+    position: relative; width: 16px; height: 110px; border-radius: 6px;
+    background: linear-gradient(to bottom,
+      #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%);
+    cursor: ns-resize; touch-action: none;
+  }
+  .le-hue-thumb {
+    position: absolute; left: -2px; right: -2px; height: 4px;
+    border: 1px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+    transform: translateY(-50%); pointer-events: none;
+  }
 
   /* ----- Lecteur d'animation ----- */
   .player{ background: var(--sp-plot-bg); }
@@ -436,6 +460,11 @@
     <details class="le-advanced" id="leAdvancedColors">
       <summary>Avance</summary>
       <div class="le-advanced-body">
+        <div class="le-picker">
+          <div class="le-sv" id="leSvSquare"><span class="le-sv-thumb" id="leSvThumb"></span></div>
+          <div class="le-hue" id="leHueStrip"><span class="le-hue-thumb" id="leHueThumb"></span></div>
+        </div>
+        <label>Hex <input id="leHex" type="text" maxlength="7" spellcheck="false" value="#1f77b4"></label>
         <label>Palette <select id="lePalette"></select></label>
         <div class="le-swatches" id="lePaletteColors" aria-label="Couleurs de palette"></div>
         <button class="compact" id="leApplyPalette">Appliquer palette</button>
@@ -1578,6 +1607,89 @@
     }
   }
 
+  // ---- Selecteur de couleur 2D (mode avance) ----
+  let pickerHsv = { h: 0, s: 1, v: 1 };
+
+  // Restyle la trace ciblee en direct, SANS persister (apercu pendant le drag).
+  function livePreviewColor(hex){
+    const t = legendEditTarget;
+    if (!t.el || t.idx < 0 || typeof LegendEdit === "undefined"){ return; }
+    try { Plotly.restyle(t.el, LegendEdit.buildRestyle({ color: hex }), [t.idx]); } catch (e) {}
+  }
+
+  function renderPicker(){
+    if (typeof LegendEdit === "undefined"){ return; }
+    const sv = document.getElementById("leSvSquare");
+    const svThumb = document.getElementById("leSvThumb");
+    const hueThumb = document.getElementById("leHueThumb");
+    const hex = LegendEdit.hsvToHex(pickerHsv.h, pickerHsv.s, pickerHsv.v);
+    if (sv){ sv.style.backgroundColor = LegendEdit.hsvToHex(pickerHsv.h, 1, 1); }
+    if (svThumb){
+      svThumb.style.left = (pickerHsv.s * 100) + "%";
+      svThumb.style.top = ((1 - pickerHsv.v) * 100) + "%";
+    }
+    if (hueThumb){ hueThumb.style.top = ((pickerHsv.h / 360) * 100) + "%"; }
+    const hexInput = document.getElementById("leHex");
+    if (hexInput){ hexInput.value = hex; }
+    setLegendColor(hex);
+    return hex;
+  }
+
+  // Initialise le selecteur depuis une couleur hex (ex. a l'ouverture).
+  function setPickerFromHex(hex){
+    if (typeof LegendEdit === "undefined"){ return; }
+    pickerHsv = LegendEdit.hexToHsv(hex);
+    renderPicker();
+  }
+
+  function clamp01(x){ return x < 0 ? 0 : (x > 1 ? 1 : x); }
+
+  // Drag generique : appelle update(fraction) puis apercu live ; persiste au relacher.
+  function bindPickerDrag(el, update){
+    if (!el){ return; }
+    function move(ev){
+      const r = el.getBoundingClientRect();
+      update(clamp01((ev.clientX - r.left) / r.width), clamp01((ev.clientY - r.top) / r.height));
+      livePreviewColor(renderPicker());
+    }
+    el.addEventListener("pointerdown", function(ev){
+      el.setPointerCapture(ev.pointerId);
+      move(ev);
+      ev.preventDefault();
+    });
+    el.addEventListener("pointermove", function(ev){
+      if (el.hasPointerCapture(ev.pointerId)){ move(ev); }
+    });
+    el.addEventListener("pointerup", function(ev){
+      try { el.releasePointerCapture(ev.pointerId); } catch (e) {}
+      // Persiste l'edition (couleur courante) une seule fois.
+      const t = legendEditTarget;
+      const hex = LegendEdit.hsvToHex(pickerHsv.h, pickerHsv.s, pickerHsv.v);
+      if (t.el && t.idx >= 0){ persistLegendPatch(t.el, t.idx, LegendEdit.buildRestyle({ color: hex })); }
+    });
+  }
+
+  (function initColorPicker(){
+    bindPickerDrag(document.getElementById("leSvSquare"), function(fx, fy){
+      pickerHsv.s = fx;
+      pickerHsv.v = 1 - fy;
+    });
+    bindPickerDrag(document.getElementById("leHueStrip"), function(fx, fy){
+      pickerHsv.h = fy * 360;
+    });
+    const hexInput = document.getElementById("leHex");
+    if (hexInput){
+      hexInput.addEventListener("change", function(){
+        setPickerFromHex(hexInput.value);
+        livePreviewColor(LegendEdit.hsvToHex(pickerHsv.h, pickerHsv.s, pickerHsv.v));
+      });
+    }
+    const colorInput = document.getElementById("leColor");
+    if (colorInput){
+      colorInput.addEventListener("input", function(){ setPickerFromHex(colorInput.value); });
+    }
+  })();
+
   function renderColorSwatches(container, colors){
     if (!container || !colors){ return; }
     container.innerHTML = "";
@@ -1625,6 +1737,7 @@
     const v = LegendEdit.readTrace(el.data[idx]);
     document.getElementById("leName").value = v.name;
     document.getElementById("leColor").value = LegendEdit.toHexColor(v.color, "#1f77b4");
+    setPickerFromHex(LegendEdit.toHexColor(v.color, "#1f77b4"));
     document.getElementById("leDash").value = v.dash;
     document.getElementById("leWidth").value = String(v.width);
     document.getElementById("leSymbol").value = v.symbol;
