@@ -1,6 +1,10 @@
 # Ce qui NE doit PAS partir dans le .vsix (on ne garde que le runtime :
 # extension.js, storage.js, media/, python/, package.json, readme.md).
 
+# Graphe de connaissances graphify + memoire (outillage interne, hors runtime)
+graphify-out/**
+memory/**
+
 # Brouillons de travail et docs internes
 .superpowers/**
 docs/**
