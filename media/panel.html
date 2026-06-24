@@ -2718,10 +2718,8 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
   function listPlotHeight(el, fig){
     const aspect = plotAspect(fig);
     const width = listPlotWidth(el, fig);
-
     const toolbar = 90;
     const maxHeight = Math.max(300, window.innerHeight - toolbar);
-
     return Math.min(maxHeight, Math.max(300, Math.round(width * aspect)));
   }
   function applyListPlotSizing(el, fig){
