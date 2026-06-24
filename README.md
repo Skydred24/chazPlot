@@ -55,7 +55,9 @@ lecteur intégré, et tout est **persisté** d'une session à l'autre.
   **Colorblind**). Le choix est previsualise immediatement ; **Appliquer** le
   persiste, **Fermer** restaure l'etat precedent. Les presets ajustent palette,
   tailles de police, epaisseurs, marqueurs, grille et fond pour obtenir une
-  figure prete a exporter sans retoucher le script Python.
+  figure prete a exporter sans retoucher le script Python. Des **presets
+  personnalises** peuvent etre ajoutes au menu via le reglage
+  `chazPlots.customPlotStyles`.
 - **Copier** : met l'image de la figure dans le presse-papiers (collable dans
   Word, un mail, un chat…).
 - **Export CSV** : bouton « CSV » sur les figures interactives — exporte les
@@ -103,14 +105,14 @@ lecteur intégré, et tout est **persisté** d'une session à l'autre.
 
 ### Paquet .vsix (recommandé)
 ```bash
-npx @vscode/vsce package          # produit chaz-plots-0.9.0.vsix
-code --install-extension chaz-plots-0.9.0.vsix
+npx @vscode/vsce package          # produit chaz-plots-0.10.0.vsix
+code --install-extension chaz-plots-0.10.0.vsix
 ```
 
 ### Sans droits administrateur (Windows)
 Aucune compilation, aucun `npm install` (extension en JavaScript pur) :
 1. Copiez le dossier dans
-   `%USERPROFILE%\.vscode\extensions\hugo.chaz-plots-0.9.0`.
+   `%USERPROFILE%\.vscode\extensions\hugo.chaz-plots-0.10.0`.
 2. Rechargez VS Code (`Ctrl+Shift+P` → « Reload Window »).
 3. Ouvrez un **nouveau terminal** (les variables d'environnement ne sont
    injectées que dans les terminaux créés après l'activation).
@@ -134,6 +136,15 @@ Ouvrez le dossier dans VS Code et appuyez sur `F5` (« Run Extension »).
 - `chazPlots.saveFormat` (défaut `png`) — format proposé par défaut.
 - `chazPlots.includePdf` (défaut `true`) — générer aussi un PDF vectoriel
   (rendu matplotlib) pour la sauvegarde PDF et le bundle publication.
+- `chazPlots.preRenderPlotlyPng` (défaut `false`) — pré-rendre un PNG matplotlib
+  même pour les figures déjà interactives Plotly. Désactivé par défaut pour
+  accélérer `plt.show()` (l'export PNG reste possible via le webview).
+- `chazPlots.preRenderPlotlyPdf` (défaut `false`) — idem pour un PDF matplotlib
+  natif des figures Plotly (l'export PDF raster reste possible via le webview).
+- `chazPlots.customPlotStyles` (défaut `{}`) — presets de style personnalisés
+  ajoutés au menu **Style publication** (cf. ci-dessous).
+- `chazPlots.persistFigures` (défaut `true`) — conserver les figures entre
+  sessions. Désactivez pour un mode ultra rapide sans écriture disque.
 - `chazPlots.autoReveal` (défaut `true`) — afficher le panneau à chaque figure.
 - `chazPlots.maxPersistedFigures` (défaut `200`) — figures conservées entre sessions ; **0 = illimité**.
 
@@ -256,7 +267,8 @@ Au démarrage, l'extension ouvre un serveur HTTP sur `127.0.0.1:53210` (ou le
 port libre suivant) et injecte dans les **nouveaux** terminaux :
 `MPLBACKEND=module://vscode_spyder_plots_backend`, `PYTHONPATH` += le dossier
 `python/`, `VSCODE_PLOTS_PORT`, `VSCODE_PLOTS_DPI`, `VSCODE_PLOTS_ANIM_DPI`,
-`VSCODE_PLOTS_ANIM_MAX_FRAMES`, `VSCODE_PLOTS_PDF`. À chaque `plt.show()`, le backend convertit la
+`VSCODE_PLOTS_ANIM_MAX_FRAMES`, `VSCODE_PLOTS_PDF`, `VSCODE_PLOTS_PLOTLY_PNG`,
+`VSCODE_PLOTS_PLOTLY_PDF`. À chaque `plt.show()`, le backend convertit la
 figure (Plotly → SVG → PNG, ou frames d'animation) et l'envoie en POST au
 panneau. Aucune dépendance Python hors matplotlib/numpy.
 
@@ -276,6 +288,23 @@ node test/test_legend_edit.js    # edition/prefixes de legende
 node test/check_panel_html.js    # garde-fou structurel du webview
 node --check extension.js storage.js media/legend_edit.js
 ```
+
+## Nouveautes v0.10.0
+
+- **`plt.show()` plus rapide** : pour les figures déjà interactives Plotly, le
+  backend ne pré-rend plus systématiquement les PNG/PDF matplotlib (gros gain de
+  temps à l'affichage). Les exports PNG/PDF restent disponibles via le webview ;
+  réactivables avec `chazPlots.preRenderPlotlyPng` / `preRenderPlotlyPdf`. Les
+  figures sous style science continuent de porter leurs assets matplotlib propres.
+- **Persistance débouncée** : les écritures disque des figures sont regroupées
+  (flush différé + flush au déchargement), et désactivables via
+  `chazPlots.persistFigures` pour un mode ultra rapide.
+- **Menu d'actions par carte** : les actions secondaires (CSV, bundle, LaTeX,
+  source d'export, suppression…) sont regroupées dans un menu « ⋯ » ; la carte
+  reste lisible avec Tags, Copier, Agrandir et Enregistrer en accès direct.
+- **Presets de style personnalisés** : ajoutez vos propres styles au menu
+  *Style publication* via `chazPlots.customPlotStyles`.
+- **État vide repensé** et infobulles enrichies sur l'ensemble des boutons.
 
 ## Nouveautes v0.9.0
 

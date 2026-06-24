@@ -2,7 +2,7 @@
   "name": "chaz-plots",
   "displayName": "Chaz Plots",
   "description": "Panneau de graphes matplotlib façon Spyder : plt.show() envoie les figures (et les animations) dans un panneau VS Code scrollable, avec lecteur d'animation, mode agrandir, enregistrer / tout enregistrer / supprimer / tout supprimer.",
-  "version": "0.8.0",
+  "version": "0.10.0",
   "publisher": "hugo",
   "engines": {
     "vscode": "^1.75.0"
@@ -65,10 +65,30 @@
           "default": true,
           "description": "Générer aussi un PDF vectoriel (rendu matplotlib natif) pour chaque figure : permet la sauvegarde en PDF et l'inclut dans le « Bundle publication ». Désactivez pour alléger le rendu et la persistance si vous n'exportez jamais en PDF."
         },
+        "chazPlots.preRenderPlotlyPng": {
+          "type": "boolean",
+          "default": false,
+          "description": "Pré-rendre aussi un PNG Matplotlib pour les figures déjà interactives Plotly. Désactivé par défaut pour accélérer plt.show(); l'export PNG reste disponible via le webview."
+        },
+        "chazPlots.preRenderPlotlyPdf": {
+          "type": "boolean",
+          "default": false,
+          "description": "Pré-rendre aussi un PDF Matplotlib natif pour les figures déjà interactives Plotly. Désactivé par défaut pour accélérer plt.show(); l'export PDF raster reste disponible via le webview."
+        },
         "chazPlots.autoReveal": {
           "type": "boolean",
           "default": true,
           "description": "Ouvrir/afficher automatiquement le panneau quand une figure arrive."
+        },
+        "chazPlots.customPlotStyles": {
+          "type": "object",
+          "default": {},
+          "description": "Presets de style personnalisés ajoutés au menu Style publication. Chaque clé est le nom affiché ; la valeur peut contenir title, axis, tick, legend, line, marker, grid, bg, family, colors, ticksInside, mirrorTicks, legendFrame, bold."
+        },
+        "chazPlots.persistFigures": {
+          "type": "boolean",
+          "default": true,
+          "description": "Conserver les figures entre les sessions VS Code. Désactivez pour un mode ultra rapide sans écriture disque des grosses figures."
         },
         "chazPlots.maxPersistedFigures": {
           "type": "number",

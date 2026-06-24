@@ -24,6 +24,8 @@ const fs = require("fs");
 const INDEX_KEY = "chazPlots.index";
 let ctx = null;            // ExtensionContext (acces workspaceState)
 let figuresDir = null;     // dossier des fichiers figure, ou null si indispo
+let saveQueue = new Map();
+let saveTimer = null;
 
 // A appeler une fois au demarrage : memorise le contexte et cree le dossier
 // des figures. En cas d'echec, figuresDir = null -> persistance desactivee.
@@ -99,10 +101,28 @@ function evictIfNeeded(index) {
 // ex. animations) sont asynchrones, pour ne pas bloquer le thread de
 // l'extension. loadAll() tolere un fichier manquant, donc une ecriture qui
 // echoue reste sans danger (best-effort).
+function scheduleFlush() {
+  if (saveTimer !== null) { return; }
+  saveTimer = setTimeout(function () {
+    saveTimer = null;
+    flushSaves();
+  }, 350);
+}
+
+function flushSaves() {
+  if (!figuresDir || saveQueue.size === 0) { return; }
+  const batch = Array.from(saveQueue.values());
+  saveQueue.clear();
+  batch.forEach(function (fig) {
+    fs.promises.writeFile(figPath(fig.id), JSON.stringify(fig), "utf8")
+      .catch(function () { /* best-effort */ });
+  });
+}
+
 function save(fig) {
   if (!figuresDir) { return; }
-  fs.promises.writeFile(figPath(fig.id), JSON.stringify(fig), "utf8")
-    .catch(function () { /* best-effort */ });
+  saveQueue.set(fig.id, fig);
+  scheduleFlush();
   const index = readIndex();
   index.figures = index.figures.filter(function (f) { return f.id !== fig.id; });
   index.figures.push({ id: fig.id, title: fig.title, tags: fig.tags || [], ts: fig.ts });
@@ -112,6 +132,7 @@ function save(fig) {
 }
 
 function remove(id) {
+  saveQueue.delete(id);
   if (!figuresDir) { return; }
   const index = readIndex();
   index.figures = index.figures.filter(function (f) { return f.id !== id; });
@@ -120,6 +141,7 @@ function remove(id) {
 }
 
 function removeAll() {
+  saveQueue.clear();
   if (!figuresDir) { return; }
   const index = readIndex();
   index.figures.forEach(function (f) { unlinkAsync(f.id); });
@@ -128,6 +150,11 @@ function removeAll() {
 }
 
 function updateTags(id, tags) {
+  if (saveQueue.has(id)) {
+    const queued = saveQueue.get(id);
+    queued.tags = tags;
+    saveQueue.set(id, queued);
+  }
   if (!figuresDir) { return; }
   const index = readIndex();
   const entry = index.figures.find(function (f) { return f.id === id; });
@@ -146,4 +173,5 @@ function updateTags(id, tags) {
 module.exports = {
   init: init, loadAll: loadAll, save: save, remove: remove,
   removeAll: removeAll, updateTags: updateTags, nextId: nextId,
+  flushSaves: flushSaves,
 };

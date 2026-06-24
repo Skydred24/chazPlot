@@ -83,6 +83,7 @@ function activate(context) {
 }
 
 function deactivate() {
+  try { storage.flushSaves(); } catch (e) { /* best-effort */ }
   if (server) {
     server.close();
   }
@@ -211,6 +212,8 @@ function injectEnvironment(port) {
   env.replace("VSCODE_PLOTS_ANIM_DPI", String(cfg.get("animationDpi", 130)));
   env.replace("VSCODE_PLOTS_ANIM_MAX_FRAMES", String(cfg.get("animationMaxFrames", 600)));
   env.replace("VSCODE_PLOTS_PDF", cfg.get("includePdf", true) ? "1" : "0");
+  env.replace("VSCODE_PLOTS_PLOTLY_PNG", cfg.get("preRenderPlotlyPng", false) ? "1" : "0");
+  env.replace("VSCODE_PLOTS_PLOTLY_PDF", cfg.get("preRenderPlotlyPdf", false) ? "1" : "0");
   env.prepend("PYTHONPATH", pyDir + path.delimiter);
 }
 
@@ -243,9 +246,10 @@ function addFigure(data) {
   };
   nextId = nextId + 1;
   figures.push(fig);
-  storage.save(fig);
 
   const cfg = vscode.workspace.getConfiguration("chazPlots");
+  if (cfg.get("persistFigures", true)) { storage.save(fig); }
+
   ensurePanel(cfg.get("autoReveal", true));
   postToWebview({ type: "add", fig: fig });
 }
@@ -403,19 +407,16 @@ async function plotlyExportOptions(fig) {
     { label: "PNG", description: "raster, qualite controlee par le DPI", value: "png" },
     { label: "SVG", description: "vectoriel, recommande pour Word/Pandoc", value: "svg" }
   ];
-  // PDF disponible : rendu matplotlib natif (fidele, vectoriel) deja recu.
-  if (fig && fig.pdf) {
-    choices.push({
-      label: "PDF",
-      description: fig.id === "compare"
-        ? "raster haute resolution (comparaison)"
-        : "vectoriel matplotlib, ideal publication/LaTeX",
-      value: "pdf"
-    });
-  }
+  // PDF disponible : natif si deja recu, sinon rendu webview raster a la demande.
+  choices.push({
+    label: "PDF",
+    description: fig && fig.pdf && fig.id !== "compare" && !fig.edited
+      ? "vectoriel matplotlib, ideal publication/LaTeX"
+      : "raster haute resolution genere a la demande",
+    value: "pdf"
+  });
   const formatPick = await vscode.window.showQuickPick(choices, { placeHolder: "Format d'export" });
   if (!formatPick) { return null; }
-  // Le PDF est ecrit directement depuis fig.pdf (pas d'export via le webview).
   if (formatPick.value === "pdf") { return { format: "pdf" }; }
 
   let dpi = null;
@@ -813,7 +814,11 @@ function webviewHtml(webview) {
     template = null;
   }
   if (template !== null) {
+    const cfg = vscode.workspace.getConfiguration("chazPlots");
+    const customPlotStyles = cfg.get("customPlotStyles", {});
+    const customPlotStylesJson = JSON.stringify(customPlotStyles && typeof customPlotStyles === "object" ? customPlotStyles : {});
     return template
+      .replace(/{{customPlotStylesJson}}/g, customPlotStylesJson)
       .replace(/{{nonce}}/g, nonce)
       .replace(/{{cspSource}}/g, webview.cspSource)
       .replace(/{{plotlyUri}}/g, String(plotlyUri))

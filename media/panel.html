@@ -107,13 +107,35 @@
     min-width:34px; height:28px; padding:0 8px; border-radius:6px;
     font-weight:700; letter-spacing:.3px;
   }
+  .action-menu{ position:relative; display:inline-flex; }
+  .action-menu summary{ list-style:none; }
+  .action-menu summary::-webkit-details-marker{ display:none; }
+  .action-menu-trigger{ user-select:none; }
+  .action-menu[open] .action-menu-trigger{
+    background: var(--vscode-toolbar-hoverBackground, rgba(127,127,127,.18));
+    opacity:1;
+  }
+  .action-menu-list{
+    position:absolute; top:32px; right:0; z-index:35;
+    min-width:210px; padding:6px; display:flex; flex-direction:column; gap:3px;
+    background: var(--sp-surface);
+    border:1px solid var(--sp-border);
+    border-radius:8px;
+    box-shadow: var(--sp-shadow-2);
+  }
+  .action-menu-list button{
+    width:100%; min-height:28px; text-align:left; border-color:transparent;
+    background:transparent; color:var(--sp-text); font-weight:500; letter-spacing:0;
+  }
+  .action-menu-list button:hover{ background: var(--vscode-toolbar-hoverBackground, rgba(127,127,127,.18)); }
+  .action-menu-list button.danger{ color: var(--vscode-errorForeground, #f85149); }
 
   /* ----- Liste de cartes ----- */
   #list{ padding: var(--sp-pad); display:flex; flex-direction:column; gap: var(--sp-gap); }
   .card{
     border:1px solid var(--sp-border);
     border-radius: var(--sp-radius);
-    overflow:hidden;
+    overflow:visible;
     background: var(--sp-surface);
     box-shadow: var(--sp-shadow-1);
     transition: box-shadow .15s ease, transform .15s ease, border-color .15s ease;
@@ -332,8 +354,17 @@
   }
 
   /* ----- Etat vide ----- */
-  .empty{ padding:64px 24px; text-align:center; opacity:.6; font-size:13px; line-height:1.6; }
-  .empty code{ background: var(--vscode-textCodeBlock-background, rgba(127,127,127,.15)); padding:1px 6px; border-radius:4px; }
+  .empty{
+    display:none; max-width:640px; margin:52px auto; padding:28px 30px;
+    text-align:left; font-size:13px; line-height:1.55;
+    border:1px solid var(--sp-border); border-radius:10px;
+    background: var(--sp-surface); box-shadow: var(--sp-shadow-1);
+  }
+  .empty h2{ margin:0 0 8px; font-size:18px; font-weight:650; color:var(--sp-text); }
+  .empty p{ margin:0 0 14px; color:var(--sp-text-dim); }
+  .empty ul{ margin:12px 0 0; padding-left:18px; color:var(--sp-text-dim); }
+  .empty li{ margin:5px 0; }
+  .empty code{ background: var(--vscode-textCodeBlock-background, rgba(127,127,127,.15)); padding:1px 6px; border-radius:4px; color:var(--sp-text); }
 
   /* ----- Overlay « agrandir » ----- */
   .overlay{
@@ -440,20 +471,25 @@
     <span class="spacer"></span>
     <span class="compare-status" id="compareStatus">0 selectionne</span>
     <span class="segmented">
-      <button class="compact" id="compareSide" disabled>Cote a cote</button>
-      <button class="compact" id="compareStack" disabled>Superposer</button>
+      <button class="compact" id="compareSide" disabled title="Afficher les graphes selectionnes cote a cote">Cote a cote</button>
+      <button class="compact" id="compareStack" disabled title="Superposer les graphes selectionnes quand leurs axes sont compatibles">Superposer</button>
     </span>
     <label class="fit" title="Conserver la sélection de figures quand de nouvelles figures arrivent (sinon elle se vide à chaque nouvelle figure)"><input type="checkbox" id="keepSelToggle"> Garder la sélection</label>
-    <label class="fit"><input type="checkbox" id="fitToggle" checked> Ajuster à la largeur</label>
+    <label class="fit" title="Adapter automatiquement chaque graphe a la largeur disponible"><input type="checkbox" id="fitToggle" checked> Ajuster à la largeur</label>
     <button id="pasteFig" title="Coller ici la figure copiee (depuis cette fenetre ou une autre)">Coller</button>
-    <button class="primary" id="saveAll">Tout enregistrer</button>
-    <button id="deleteAll">Tout supprimer</button>
+    <button class="primary" id="saveAll" title="Enregistrer toutes les figures de l historique">Tout enregistrer</button>
+    <button id="deleteAll" title="Supprimer toutes les figures de l historique">Tout supprimer</button>
   </div>
 
   <div id="list"></div>
   <div class="empty" id="empty">
-    Aucun graphe pour l'instant.<br>
-    Lancez un script avec <code>plt.show()</code> (ou une animation matplotlib) dans un nouveau terminal.
+    <h2>Aucun graphe pour l instant</h2>
+    <p>Lancez un script Python avec <code>plt.show()</code> pour afficher vos figures ici.</p>
+    <ul>
+      <li>Les nouveaux graphes apparaissent dans l historique.</li>
+      <li>Cochez plusieurs graphes pour les comparer cote a cote ou en superposition.</li>
+      <li>Utilisez Enregistrer ou Copier directement depuis chaque carte.</li>
+    </ul>
   </div>
 
   <!-- Overlay « agrandir » -->
@@ -564,6 +600,7 @@
   </div>
 
 <script nonce="{{nonce}}">
+window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
 // ============================================================================
 // UI du webview « Graphes ». Recoit les figures depuis extension.js et les rend.
 //
@@ -646,7 +683,8 @@
     last:  '<svg viewBox="0 0 16 16"><path d="M4 4l5.5 4L4 12ZM12 4v8"/></svg>',
     expand:'<svg viewBox="0 0 16 16"><path d="M6 2.5H2.5V6M10 2.5H13.5V6M13.5 10V13.5H10M2.5 10V13.5H6"/></svg>',
     save:  '<svg viewBox="0 0 16 16"><path d="M8 2.5V9M5.3 6.7 8 9.4l2.7-2.7M3.5 11.3v1.9h9v-1.9"/></svg>',
-    trash: '<svg viewBox="0 0 16 16"><path d="M3 4.5h10M6.3 4.5V3h3.4v1.5M4.6 4.5 5.3 13.3h5.4l.7-8.8M7 7v3.8M9 7v3.8"/></svg>'
+    trash: '<svg viewBox="0 0 16 16"><path d="M3 4.5h10M6.3 4.5V3h3.4v1.5M4.6 4.5 5.3 13.3h5.4l.7-8.8M7 7v3.8M9 7v3.8"/></svg>',
+    more:  '<svg viewBox="0 0 16 16"><path d="M4 8h.01M8 8h.01M12 8h.01"/></svg>'
   };
 
   const figStore = {};   // id -> fig
@@ -820,9 +858,37 @@
     const b = document.createElement("button");
     b.className = "iconbtn";
     b.title = title;
+    b.setAttribute("aria-label", title);
     b.innerHTML = ICONS[name] || "";
     return b;
   }
+
+  function makeActionMenu(buttons){
+    const filtered = buttons.filter(Boolean);
+    if (filtered.length === 0){ return null; }
+    const details = document.createElement("details");
+    details.className = "action-menu";
+    const summary = document.createElement("summary");
+    summary.className = "iconbtn action-menu-trigger";
+    summary.title = "Plus d actions";
+    summary.setAttribute("aria-label", "Plus d actions");
+    summary.innerHTML = ICONS.more;
+    const list = document.createElement("div");
+    list.className = "action-menu-list";
+    filtered.forEach(function(button){
+      button.classList.add("menu-item");
+      button.addEventListener("click", function(){ setTimeout(function(){ details.open = false; }, 0); });
+      list.appendChild(button);
+    });
+    details.append(summary, list);
+    return details;
+  }
+
+  document.addEventListener("click", function(e){
+    document.querySelectorAll(".action-menu[open]").forEach(function(menu){
+      if (!menu.contains(e.target)){ menu.open = false; }
+    });
+  });
 
   // ----------------------------------------------------------
   // Lecteur d'animation
@@ -2057,6 +2123,38 @@
     rapport: { title: 22, axis: 17, tick: 13, legend: 13, line: 2.4, marker: 7, grid: "light", bg: "white", palette: "tab10", bold: true },
     colorblind: { title: 20, axis: 16, tick: 12, legend: 12, line: 2.2, marker: 7, grid: "light", bg: "white", palette: "okabe", bold: false }
   };
+  const CUSTOM_PUBLICATION_PRESETS = (window.CHazPlotsCustomStyles && typeof window.CHazPlotsCustomStyles === "object") ? window.CHazPlotsCustomStyles : {};
+
+  function sanitizePublicationStyle(raw){
+    const src = raw && typeof raw === "object" ? raw : {};
+    const out = Object.assign({}, src);
+    ["title", "axis", "tick", "legend", "line", "marker", "axisWidth", "tickLen"].forEach(function(k){
+      if (out[k] !== undefined){
+        const n = Number(out[k]);
+        if (isFinite(n) && n > 0){ out[k] = n; }
+        else { delete out[k]; }
+      }
+    });
+    if (Array.isArray(out.colors)){
+      out.colors = out.colors.map(String).filter(Boolean).slice(0, 32);
+    } else {
+      delete out.colors;
+    }
+    return out;
+  }
+
+  function registerCustomPublicationPresets(){
+    const select = document.getElementById("pubPreset");
+    if (!select){ return; }
+    Object.keys(CUSTOM_PUBLICATION_PRESETS).forEach(function(name){
+      const value = "custom:" + name;
+      if (Array.prototype.some.call(select.options, function(o){ return o.value === value; })){ return; }
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = name;
+      select.appendChild(option);
+    });
+  }
   let publicationTarget = null;
   let publicationPreview = null;
   let publicationPreviewSeq = 0;
@@ -2073,6 +2171,10 @@
 
   function readPublicationValues(){
     const preset = selectedPublicationPreset();
+    if (preset.indexOf("custom:") === 0){
+      const name = preset.slice("custom:".length);
+      return Object.assign({}, PUBLICATION_PRESETS.article, sanitizePublicationStyle(CUSTOM_PUBLICATION_PRESETS[name]));
+    }
     return PUBLICATION_PRESETS[preset] || PUBLICATION_PRESETS.article;
   }
 
@@ -2113,6 +2215,7 @@
     publicationTarget = el;
     publicationPreview = capturePublicationState(el);
     publicationPreviewSeq += 1;
+    registerCustomPublicationPresets();
     const preset = document.getElementById("pubPreset");
     if (preset){ preset.value = "article"; }
     updatePublicationModeVisibility();
@@ -3094,26 +3197,13 @@
     const bTags = document.createElement("button");
     bTags.className = "textbtn";
     bTags.textContent = "Tags";
-    bTags.title = "Modifier les tags";
+    bTags.title = "Ajouter, retirer ou filtrer les tags de cette figure";
     bTags.addEventListener("click", function(){ editTags(fig); });
 
-    const bExpand = iconBtn("expand", "Agrandir");
+    const bExpand = iconBtn("expand", "Agrandir la figure");
     bExpand.addEventListener("click", function(){ openOverlay(fig.id); });
-    if (fig.pgf) {
-      const bPgf = document.createElement("button");
-      bPgf.className = "textbtn";
-      bPgf.textContent = "LaTeX";
-      bPgf.title = "Copier le code LaTeX PGF/TikZ - clic droit pour enregistrer";
-      bPgf.addEventListener("click", function(){
-        vscodeApi.postMessage({ type: "copyPgf", id: fig.id });
-      });
-      bPgf.addEventListener("contextmenu", function(e){
-        e.preventDefault();
-        vscodeApi.postMessage({ type: "savePgf", id: fig.id });
-      });
-      head.appendChild(bPgf);
-    }
-    const bSave = iconBtn("save", "Enregistrer");
+
+    const bSave = iconBtn("save", "Enregistrer cette figure (PNG, SVG ou PDF selon les donnees disponibles)");
     bSave.addEventListener("click", function(){
       const player = card._player;
       vscodeApi.postMessage({
@@ -3121,39 +3211,49 @@
         frameIndex: player ? player.getIndex() : undefined
       });
     });
+
     const bCopy = document.createElement("button");
     bCopy.className = "textbtn";
     bCopy.textContent = "Copier";
-    bCopy.title = "Copier l'image dans le presse-papiers (et la figure, pour la coller dans une autre fenetre)";
+    bCopy.title = "Copier l image dans le presse-papiers et memoriser la figure pour un coller inter-fenetres";
     bCopy.addEventListener("click", function(){
       const player = card._player;
       copyFig(fig, player ? player.getIndex() : 0);
-      // Stocke aussi la figure (cote extension) pour un coller inter-fenetres.
       vscodeApi.postMessage({ type: "copyFigureData", id: fig.id });
     });
-    const bDel = iconBtn("trash", "Supprimer");
-    bDel.addEventListener("click", function(){ vscodeApi.postMessage({ type: "delete", id: fig.id }); });
-    const buttons = [bTags, bCopy];
+
+    const menuButtons = [];
+    if (fig.pgf) {
+      const bPgf = document.createElement("button");
+      bPgf.className = "textbtn";
+      bPgf.textContent = "LaTeX PGF/TikZ";
+      bPgf.title = "Copier le code LaTeX PGF/TikZ. Clic droit : enregistrer le fichier .tex";
+      bPgf.addEventListener("click", function(){
+        vscodeApi.postMessage({ type: "copyPgf", id: fig.id });
+      });
+      bPgf.addEventListener("contextmenu", function(e){
+        e.preventDefault();
+        vscodeApi.postMessage({ type: "savePgf", id: fig.id });
+      });
+      menuButtons.push(bPgf);
+    }
     if (fig.plotly && !fig.frames){
       const bCsv = document.createElement("button");
       bCsv.className = "textbtn";
-      bCsv.textContent = "CSV";
-      bCsv.title = "Exporter les donnees visibles en CSV (respecte le zoom)";
+      bCsv.textContent = "Exporter CSV";
+      bCsv.title = "Exporter les donnees visibles en CSV, en respectant le zoom courant";
       bCsv.addEventListener("click", function(){
         exportCsv(document.getElementById("plot-" + fig.id), fig);
       });
-      buttons.push(bCsv);
+      menuButtons.push(bCsv);
 
-      // Source d'export : assets matplotlib (propres, type SciencePlots) vs rendu
-      // Plotly interactif. Auto-active pour les figures detectees "science" ;
-      // override par clic (persiste cote extension).
       const bSci = document.createElement("button");
       bSci.className = "textbtn";
       const syncSci = function(){
         bSci.textContent = fig.sciencePlot ? "Export : matplotlib" : "Export : interactif";
         bSci.title = fig.sciencePlot
-          ? "Export depuis le rendu matplotlib (propre). Cliquer pour exporter le rendu interactif Plotly."
-          : "Export depuis le rendu interactif Plotly. Cliquer pour exporter le rendu matplotlib (propre).";
+          ? "Les exports utilisent le rendu matplotlib propre. Cliquer pour basculer vers le rendu interactif Plotly."
+          : "Les exports utilisent le rendu interactif Plotly. Cliquer pour basculer vers le rendu matplotlib propre.";
       };
       syncSci();
       bSci.addEventListener("click", function(){
@@ -3161,20 +3261,28 @@
         syncSci();
         vscodeApi.postMessage({ type: "setExportSource", id: fig.id, sciencePlot: !!fig.sciencePlot });
       });
-      buttons.push(bSci);
+      menuButtons.push(bSci);
     }
     if (!fig.frames){
       const bBundle = document.createElement("button");
       bBundle.className = "textbtn";
-      bBundle.textContent = "Bundle";
-      bBundle.title = "Exporter un dossier publication (png + svg + metadata.json + figure.tex)";
+      bBundle.textContent = "Bundle publication";
+      bBundle.title = "Exporter un dossier avec figure.png, figure.svg, metadata.json et figure.tex";
       bBundle.addEventListener("click", function(){
         exportBundle(document.getElementById("plot-" + fig.id), fig);
       });
-      buttons.push(bBundle);
+      menuButtons.push(bBundle);
     }
-    buttons.push(bExpand, bSave, bDel);
-    head.append.apply(head, buttons);
+    const bDel = document.createElement("button");
+    bDel.className = "textbtn danger";
+    bDel.textContent = "Supprimer";
+    bDel.title = "Supprimer cette figure de l historique";
+    bDel.addEventListener("click", function(){ vscodeApi.postMessage({ type: "delete", id: fig.id }); });
+    menuButtons.push(bDel);
+
+    head.append(bTags, bCopy, bExpand, bSave);
+    const actionMenu = makeActionMenu(menuButtons);
+    if (actionMenu){ head.appendChild(actionMenu); }
 
     card.appendChild(head);
     const prov = provenanceLine(fig);

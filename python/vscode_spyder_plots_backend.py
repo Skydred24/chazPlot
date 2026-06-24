@@ -201,6 +201,19 @@ def _pdf_enabled():
     return os.environ.get("VSCODE_PLOTS_PDF", "1") != "0"
 
 
+def _pre_render_plotly_png():
+    """Rendre aussi un PNG matplotlib pour les figures deja interactives.
+    Desactive par defaut : Plotly sait exporter PNG cote webview, ce rendu
+    coutait cher a chaque plt.show()."""
+    return os.environ.get("VSCODE_PLOTS_PLOTLY_PNG", "0") != "0"
+
+
+def _pre_render_plotly_pdf():
+    """Rendre aussi un PDF matplotlib natif pour les figures deja interactives.
+    Desactive par defaut : le webview exporte un PDF raster a la demande."""
+    return os.environ.get("VSCODE_PLOTS_PLOTLY_PDF", "0") != "0"
+
+
 def _anim_dpi():
     """DPI utilise pour les frames d'animation (plus leger que le statique,
     car multiplie par le nombre de frames). Reglable via VSCODE_PLOTS_ANIM_DPI."""
@@ -560,7 +573,9 @@ class _BackendVSCodeSpyderPlots(_Backend):
                     "detail": str(error),
                 }
 
-            png_bytes = _render(figure, "png", _dpi())
+            science_style = getattr(figure, "_sp_science_style", None)
+            pre_render_plotly_png = plotly_spec is not None and (_pre_render_plotly_png() or science_style is not None)
+            png_bytes = _render(figure, "png", _dpi()) if (plotly_spec is None or pre_render_plotly_png) else None
             svg_bytes = None
             svg_too_big = False
             if plotly_spec is None:
@@ -572,16 +587,13 @@ class _BackendVSCodeSpyderPlots(_Backend):
             if plotly_spec is None and svg_bytes is None and png_bytes is None:
                 continue
 
-            # PDF vectoriel matplotlib (rendu natif, fidele) pour la sauvegarde
-            # PDF et le bundle publication. Optionnel (cf. _pdf_enabled).
-            pdf_bytes = _render(figure, "pdf", _dpi()) if _pdf_enabled() else None
+            # PDF vectoriel matplotlib (rendu natif, fidele). Pour les figures
+            # Plotly ordinaires, on l'evite par defaut : le webview exporte un
+            # PDF raster a la demande, beaucoup plus rapide au plt.show().
+            pre_render_plotly_pdf = plotly_spec is not None and (_pre_render_plotly_pdf() or science_style is not None)
+            pdf_bytes = _render(figure, "pdf", _dpi()) if (_pdf_enabled() and (plotly_spec is None or pre_render_plotly_pdf)) else None
 
             render = _render_diag(plotly_spec, svg_bytes, plotly_reason, svg_too_big)
-
-            # Figure construite sous un style science (science/ieee/nature) ?
-            # Les assets matplotlib ci-dessus sont alors deja propres : on le
-            # signale pour que l'export par defaut les privilegie.
-            science_style = getattr(figure, "_sp_science_style", None)
 
             # PGF/TikZ is intentionally not generated during capture.
             # It is fragile on complex matplotlib artists, while PNG/SVG export

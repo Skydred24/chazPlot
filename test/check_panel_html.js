@@ -12,7 +12,7 @@ const placeholders = [
   "{{errorMathUri}}", "{{insetLayoutUri}}", "{{plotNavUri}}",
   "{{measureMathUri}}", "{{csvExportUri}}", "{{compareUtilUri}}",
   "{{bundleMetaUri}}", "{{figureFilterUri}}", "{{pdfExportUri}}",
-  "{{legendEditUri}}", "{{autoscaleUri}}",
+  "{{legendEditUri}}", "{{autoscaleUri}}", "{{customPlotStylesJson}}",
 ];
 const requiredIds = [
   "count", "searchInput", "compareStatus", "compareSide", "compareStack",
