@@ -247,4 +247,60 @@ plt.tight_layout()
 # Affichage de toutes les fenêtres en même temps
 plt.show()
 
+# =====================================================================
+# CAS 3 : STYLE SCIENCEPLOTS (rendu fidele a l'export)
+# Le style doit etre actif PENDANT la construction de la figure :
+# on entoure le trace ET le plt.show() d'un plt.style.context(...).
+# Les styles 'science'/'ieee'/'nature' sont enregistres par le backend,
+# pas besoin d'installer le package scienceplots.
+# =====================================================================
+
+def _model(xv, p):
+    # petite famille de courbes facon "loi de puissance" (exemple SciencePlots)
+    return xv ** (2 * p + 1) / (1 + xv ** (2 * p + 1))
+
+xs = np.linspace(0.75, 1.25, 201)
+pwrs = [1, 2, 3, 4]
+
+# --- Figure A : SANS style (reference visuelle) ---
+fig_a, ax_a = plt.subplots(figsize=(5, 3.75))
+for p in pwrs:
+    ax_a.plot(xs, _model(xs, p), label=str(p))
+ax_a.legend(title="Ordre")
+ax_a.set_xlabel("Tension (V)")
+ax_a.set_ylabel("Courant (uA)")
+ax_a.set_title("Sans style")
+ax_a.set_xlim(0.75, 1.25)
+ax_a.set_ylim(0.0, 1.0)
+fig_a.canvas.manager.set_window_title("sciplot_sans_style")
+plt.show()
+
+# --- Figure B : style 'science' ---
+with plt.style.context('science'):
+    fig_b, ax_b = plt.subplots(figsize=(5, 3.75))
+    for p in pwrs:
+        ax_b.plot(xs, _model(xs, p), label=str(p))
+    ax_b.legend(title="Ordre")
+    ax_b.set_xlabel("Tension (V)")
+    ax_b.set_ylabel("Courant (uA)")
+    ax_b.set_title("Style science")
+    ax_b.set_xlim(0.75, 1.25)
+    ax_b.set_ylim(0.0, 1.0)
+    fig_b.canvas.manager.set_window_title("sciplot_science")
+    plt.show()
+
+# --- Figure C : empilement 'science' + 'ieee' (deux colonnes, N&B) ---
+with plt.style.context(['science', 'ieee']):
+    fig_c, ax_c = plt.subplots()
+    for p in pwrs:
+        ax_c.plot(xs, _model(xs, p), label=str(p))
+    ax_c.legend(title="Ordre")
+    ax_c.set_xlabel("Tension (V)")
+    ax_c.set_ylabel("Courant (uA)")
+    ax_c.set_title("Style science + ieee")
+    ax_c.set_xlim(0.75, 1.25)
+    ax_c.set_ylim(0.0, 1.0)
+    fig_c.canvas.manager.set_window_title("sciplot_science_ieee")
+    plt.show()
+
 print("7 figures + 1 animation envoyees au panneau Graphes.")
