@@ -2267,7 +2267,9 @@
   function listPlotHeight(el, fig){
     const aspect = plotAspect(fig);
     const width = listPlotWidth(el, fig);
-    return Math.max(300, Math.round(width * aspect));
+    const toolbar = 90;
+    const maxHeight = Math.max(300,window.innerHeight - toolbar);
+    return Math.min(maxHeight,Math.max(300,Math.round(width*aspect)));
   }
   function applyListPlotSizing(el, fig){
     if (!el || !el.parentElement){ return { width: 0, height: 300 }; }
