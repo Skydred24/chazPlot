@@ -45,5 +45,34 @@ class VendoredFilesTests(unittest.TestCase):
         self.assertEqual(params["font.family"], ["sans-serif"])
 
 
+class RegisterTests(unittest.TestCase):
+    def setUp(self):
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
+        import vscode_spyder_plots_backend  # noqa: F401 — import = enregistrement
+        self.matplotlib = matplotlib
+
+    def test_names_registered(self):
+        for name in ("science", "ieee", "nature"):
+            self.assertIn(name, mstyle.available)
+
+    def test_science_context_applies(self):
+        import matplotlib.pyplot as plt
+        with plt.style.context("science"):
+            self.assertEqual(matplotlib.rcParams["axes.linewidth"], 0.5)
+            self.assertEqual(matplotlib.rcParams["xtick.direction"], "in")
+            self.assertTrue(matplotlib.rcParams["ytick.minor.visible"])
+            self.assertFalse(matplotlib.rcParams["legend.frameon"])
+            self.assertEqual(matplotlib.rcParams["font.family"], ["serif"])
+            self.assertFalse(matplotlib.rcParams["text.usetex"])
+
+    def test_ieee_stacks_on_science(self):
+        import matplotlib.pyplot as plt
+        with plt.style.context(["science", "ieee"]):
+            self.assertEqual(matplotlib.rcParams["font.size"], 8.0)
+            first = mcolors.to_hex(
+                list(matplotlib.rcParams["axes.prop_cycle"])[0]["color"]).lower()
+            self.assertEqual(first, "#000000")
+
+
 if __name__ == "__main__":
     unittest.main()

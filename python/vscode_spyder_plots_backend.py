@@ -28,6 +28,28 @@ from matplotlib.backend_bases import _Backend, FigureManagerBase
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib._pylab_helpers import Gcf
 
+
+def _register_vendored_styles():
+    """Enregistre les styles vendorises (science/ieee/nature) dans la
+    librairie de styles matplotlib, par nom, SANS le package scienceplots.
+    Best-effort : ne jamais casser le run utilisateur. Appele a l'import du
+    backend (donc avant tout trace), pour que plt.style.context('science')
+    fonctionne."""
+    try:
+        import matplotlib.style as mstyle
+        styles_dir = os.path.join(os.path.dirname(__file__), "styles")
+        for name in ("science", "ieee", "nature"):
+            path = os.path.join(styles_dir, name + ".mplstyle")
+            try:
+                params = mstyle.core._rc_params_in_file(path)
+                mstyle.core.library[name] = params
+            except Exception:
+                pass  # un style manquant/illisible ne bloque pas les autres
+        mstyle.core.available[:] = sorted(mstyle.core.library.keys())
+    except Exception:
+        pass  # matplotlib.style indisponible : on ignore silencieusement
+
+
 _WARNED = False
 _SVG_MAX_BYTES = 8 * 1024 * 1024  # au-dela : fallback PNG pour l'affichage
 
@@ -472,6 +494,10 @@ class _BackendVSCodeSpyderPlots(_Backend):
         # Comme Spyder : les figures sont consommees par show().
         Gcf.destroy_all()
 
+
+# Enregistre les styles SciencePlots vendorises des l'import du backend, pour
+# que `with plt.style.context('science')` fonctionne sans installer scienceplots.
+_register_vendored_styles()
 
 # Hook installe des l'import du backend (et re-tente a chaque show()).
 _install_animation_hook()
