@@ -152,6 +152,38 @@ anim = FuncAnimation(fig, update, frames=60, interval=40)  # gardez la référen
 plt.show()                      # lecteur d'animation dans le panneau
 ```
 
+## Style SciencePlots
+
+Les styles `science`, `ieee` et `nature` (issus de
+[SciencePlots](https://github.com/garrettj403/SciencePlots), vendorisés dans
+`python/styles/`) sont disponibles **sans installer le package** : le backend
+les enregistre dans matplotlib à l'import. On choisit le style **par figure**,
+dans le code, avec le mécanisme matplotlib standard :
+
+```python
+import matplotlib.pyplot as plt
+
+with plt.style.context('science'):           # une figure science
+    fig, ax = plt.subplots()
+    ax.plot(x, y, label='données'); ax.legend()
+    plt.show()
+
+with plt.style.context(['science', 'ieee']): # empiler IEEE sur science
+    ...
+    plt.show()
+
+plt.plot(x, y); plt.show()                    # figure normale
+```
+
+Les **exports** (PNG/SVG/PDF) d'une figure produite ainsi sont du vrai
+SciencePlots, identiques aux images de référence. L'**aperçu interactif** Plotly
+en est une approximation ; le preset « science » de l'éditeur publication
+rapproche cet aperçu et peut s'appliquer à n'importe quelle figure déjà affichée.
+
+> Note : `text.usetex` est forcé à `False` (pas de dépendance LaTeX) ; les polices
+> serif passent par mathtext. La seule différence visible avec les images de
+> référence est le moteur de texte mathématique.
+
 ## Limites connues
 
 Chaque figure porte un **badge de rendu** : vert *INTERACTIF* (Plotly), ambre
