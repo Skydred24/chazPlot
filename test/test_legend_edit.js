@@ -134,6 +134,12 @@ check("hexToHsv -> hsvToHex : aller-retour exact sur BASE_COLORS", function () {
     }
   });
 });
+check("hexToRgba: hex + alpha -> rgba", function () {
+  assert.strictEqual(typeof LE.hexToRgba, "function", "hexToRgba doit etre exporte");
+  assert.strictEqual(LE.hexToRgba("#3794ff", 0.5), "rgba(55,148,255,0.5)");
+  assert.strictEqual(LE.hexToRgba("#000000", 1), "rgba(0,0,0,1)");
+});
+
 if (process.exitCode) { process.exit(process.exitCode); }
 console.log("\n" + passed + " tests OK");
 

@@ -278,6 +278,7 @@
     PALETTES: PALETTES,
     paletteColors: paletteColors,
     toHexColor: toHexColor,
+    hexToRgba: hexToRgba,
     rgbToHsv: rgbToHsv,
     hsvToRgb: hsvToRgb,
     hsvToHex: hsvToHex,

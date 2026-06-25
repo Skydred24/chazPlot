@@ -28,7 +28,7 @@ const requiredIds = [
   "legendEditor", "leName", "leTextValue", "leFontSize", "leBold", "leItalic",
   "leColor", "leDash", "leWidth", "leSymbol", "leMarkerSize", "leBaseColors", "leAdvancedColors",
   "leSvSquare", "leHueStrip", "leHex", "leApply", "leClose",
-  "insetConnectorEditor", "iceCorners", "iceLines", "iceClose",
+  "insetConnectorEditor", "iceCorners", "iceColors", "iceLines", "iceClose",
 ];
 
 const errors = [];

@@ -596,6 +596,9 @@
         <option value="4">4 coins</option>
       </select>
     </label>
+    <label>Couleur
+      <div class="le-swatches" id="iceColors" aria-label="Couleurs de base"></div>
+    </label>
     <div class="ice-lines" id="iceLines"></div>
     <button class="compact" id="iceClose">Fermer</button>
   </div>
@@ -1407,9 +1410,11 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
   // ----------------------------------------------------------
   const INSET_MIN_SIZE = 0.12;
   const INSET_CORNERS = ["nw", "ne", "sw", "se"];
-  // Etat par defaut des traits de liaison : 2 coins, opacite 0.5 par coin.
+  // Couleur par defaut de l'encart (bleu accent VS Code = rgb(55,148,255)).
+  const INSET_DEFAULT_COLOR = "#3794ff";
+  // Etat par defaut des traits de liaison : couleur, 2 coins, opacite 0.5 par coin.
   function defaultInsetConnector(){
-    return { corners: 2, opacity: { nw: 0.5, ne: 0.5, sw: 0.5, se: 0.5 } };
+    return { color: INSET_DEFAULT_COLOR, corners: 2, opacity: { nw: 0.5, ne: 0.5, sw: 0.5, se: 0.5 } };
   }
 
   function mountInsetOverlay(el){
@@ -1534,13 +1539,22 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     baseLayout[insetXKey] = insetAxis(baseLayout[selection.xaxisKey], placement.xDomain, insetYRef, selection.xRange);
     baseLayout[insetYKey] = insetAxis(baseLayout[selection.yaxisKey], placement.yDomain, insetXRef, selection.yRange);
 
+    // Etat des traits de liaison (porte aussi la couleur de l'encart : zone
+    // source + bordure + traits). col(a) = couleur choisie a l'opacite a.
+    const connector = el._spInsetConnector || (el._spInsetConnector = defaultInsetConnector());
+    const col = function(a){
+      return (typeof LegendEdit !== "undefined" && LegendEdit.hexToRgba)
+        ? LegendEdit.hexToRgba(connector.color || INSET_DEFAULT_COLOR, a)
+        : "rgba(55,148,255," + a + ")";
+    };
+
     const shapes = Array.isArray(baseLayout.shapes) ? baseLayout.shapes.slice() : [];
     shapes.push({
       type: "rect", xref: selection.xRef, yref: selection.yRef,
       x0: selection.xRange[0], x1: selection.xRange[1],
       y0: selection.yRange[0], y1: selection.yRange[1],
-      fillcolor: "rgba(55,148,255,0.08)",
-      line: { color: "rgba(55,148,255,0.95)", width: 2, dash: "dash" },
+      fillcolor: col(0.08),
+      line: { color: col(0.95), width: 2, dash: "dash" },
       editable: false
     });
     shapes.push({
@@ -1548,14 +1562,13 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
       x0: placement.xDomain[0], x1: placement.xDomain[1],
       y0: placement.yDomain[0], y1: placement.yDomain[1],
       fillcolor: "rgba(255,255,255,0)",
-      line: { color: "rgba(55,148,255,0.95)", width: 2 },
+      line: { color: col(0.95), width: 2 },
       editable: false
     });
     // Traits de liaison facon loupe : relient des coins de la zone source aux
-    // coins homonymes de l'encart. Etat porte par el (nombre de coins 2/4 +
-    // opacite par coin), pilote par Ctrl+clic sur l'encart -> insetConnectorEditor.
-    // Les coins actifs sont memorises pour que l'editeur liste un curseur/ligne.
-    const connector = el._spInsetConnector || (el._spInsetConnector = defaultInsetConnector());
+    // coins homonymes de l'encart. Etat porte par el (couleur + nombre de coins
+    // 2/4 + opacite par coin), pilote par Ctrl+clic sur l'encart ->
+    // insetConnectorEditor. Coins actifs memorises pour lister un curseur/ligne.
     el._spInsetConnectorActive = [];
     const srcRect = sourcePaperRect(baseData, baseLayout, selection);
     if (srcRect){
@@ -1567,7 +1580,7 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
         shapes.push({
           type: "line", xref: "paper", yref: "paper",
           x0: seg.x0, y0: seg.y0, x1: seg.x1, y1: seg.y1,
-          line: { color: "rgba(55,148,255," + op + ")", width: 1.5 },
+          line: { color: col(op), width: 1.5 },
           editable: false, layer: "below"
         });
       });
@@ -2516,6 +2529,24 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
       refreshInsetConnector(el);     // recalcule les coins actifs
       buildInsetConnectorLines(el);  // reconstruit les curseurs (jeu de coins change)
     }); }
+    // Pastilles de couleurs de base (memes que l'editeur de legende) : recolore
+    // l'encart entier (zone source + bordure + traits).
+    const colorsBox = document.getElementById("iceColors");
+    if (colorsBox && typeof LegendEdit !== "undefined"){
+      LegendEdit.BASE_COLORS.forEach(function(item){
+        const btn = document.createElement("button");
+        btn.type = "button"; btn.className = "le-swatch";
+        btn.title = item.label; btn.setAttribute("aria-label", item.label);
+        btn.style.background = item.value;
+        btn.addEventListener("click", function(){
+          const el = insetConnectorTarget;
+          if (!el){ return; }
+          (el._spInsetConnector || (el._spInsetConnector = defaultInsetConnector())).color = item.value;
+          refreshInsetConnector(el);
+        });
+        colorsBox.appendChild(btn);
+      });
+    }
     if (close){ close.addEventListener("click", closeInsetConnectorEditor); }
   })();
 
