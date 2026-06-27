@@ -176,7 +176,24 @@
     return best;
   }
 
+  // Predit y en x par regression lineaire sur les derniers points (fenetre) ;
+  // plus robuste au bruit d'arrondi qu'une pente a un seul pas (croisements).
+  function fitPredict(hist, x, win) {
+    const pts = hist.slice(-win);
+    if (pts.length < 2) return pts[pts.length - 1].y;
+    let n = pts.length, sx = 0, sy = 0, sxx = 0, sxy = 0;
+    for (let i = 0; i < n; i++) {
+      const p = pts[i];
+      sx += p.x; sy += p.y; sxx += p.x * p.x; sxy += p.x * p.y;
+    }
+    const den = n * sxx - sx * sx;
+    const b = den !== 0 ? (n * sxy - sx * sy) / den : 0;
+    const a = (sy - b * sx) / n;
+    return a + b * x;
+  }
+
   function traceFromSeeds(pixels, box, seeds) {
+    const FIT_WINDOW = 5;
     const byCol = {};
     for (let k = 0; k < pixels.length; k++) {
       const p = pixels[k];
@@ -186,20 +203,25 @@
     return seeds.map(function (seed) {
       function traceDir(dir) {
         const pts = [];
-        let lastY = seed.y, lastX = seed.x, slope = 0;
+        const hist = [{ x: seed.x, y: seed.y }];
+        let lastY = seed.y;
         let k = nearestIndex(xs, seed.x) + dir;
         for (; k >= 0 && k < xs.length; k += dir) {
           const x = xs[k];
           const bands = columnBands(byCol[x]);
-          const pred = lastY + slope * (x - lastX);
+          const pred = fitPredict(hist, x, FIT_WINDOW);
           let chosen = bands[0], best = Infinity;
           for (let b = 0; b < bands.length; b++) {
             const d = Math.abs(bands[b] - pred);
-            if (d < best) { best = d; chosen = bands[b]; }
+            // a egalite de distance au predit, preferer la continuite (proche du dernier y)
+            if (d < best - 1e-9 ||
+                (Math.abs(d - best) <= 1e-9 && Math.abs(bands[b] - lastY) < Math.abs(chosen - lastY))) {
+              best = d; chosen = bands[b];
+            }
           }
-          if (x !== lastX) slope = (chosen - lastY) / (x - lastX);
           pts.push({ xpx: x, ypx: chosen });
-          lastY = chosen; lastX = x;
+          hist.push({ x: x, y: chosen });
+          lastY = chosen;
         }
         return pts;
       }
