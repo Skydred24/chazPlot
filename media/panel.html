@@ -6703,7 +6703,7 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     document.body.appendChild(imageFileInput);
     return imageFileInput;
   }
-  function pickImageForImport(){ ensureImageInput().click(); }
+  function pickImageForImport(){ importFileMode = "image"; ensureImageInput().click(); }
 
   let dropHighlightCard = null;
   function setDropHighlight(card){
@@ -6999,18 +6999,26 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     const ov = document.getElementById("digitizeOverlay");
     const canvas = document.getElementById("digCanvas");
     const w = imgEl.naturalWidth, h = imgEl.naturalHeight;
-    canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(imgEl, 0, 0);
-    const data = ctx.getImageData(0, 0, w, h);
-    const img = { width: w, height: h, data: data.data };
-    digState.img = img;
-    digState.imageEl = imgEl;
-    digState.box = CurveDigitize.detectPlotBox(img) || { x0: 0, y0: 0, x1: w - 1, y1: h - 1 };
-    const clusters = CurveDigitize.clusterCurveColors(img, digState.box);
-    digState.curves = CurveDigitize.extractCurves(clusters, digState.box);
-    renderDigCurveList();
-    ov.style.display = "flex";
+    if (!w || !h) {
+      vscodeApi.postMessage({ type: "notify", level: "warn", text: "Chaz Plots : image illisible ou sans dimensions." });
+      return;
+    }
+    try {
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(imgEl, 0, 0);
+      const data = ctx.getImageData(0, 0, w, h);
+      const img = { width: w, height: h, data: data.data };
+      digState.img = img;
+      digState.imageEl = imgEl;
+      digState.box = CurveDigitize.detectPlotBox(img) || { x0: 0, y0: 0, x1: w - 1, y1: h - 1 };
+      const clusters = CurveDigitize.clusterCurveColors(img, digState.box);
+      digState.curves = CurveDigitize.extractCurves(clusters, digState.box);
+      renderDigCurveList();
+      ov.style.display = "flex";
+    } catch (err) {
+      vscodeApi.postMessage({ type: "notify", level: "warn", text: "Chaz Plots : image illisible ou sans dimensions." });
+    }
   }
 
   function renderDigCurveList() {
@@ -7048,8 +7056,11 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
   }
 
   function digValidCalib(cal) {
-    return [cal.xmin, cal.xmax, cal.ymin, cal.ymax].every(function (v) { return isFinite(v); })
-      && cal.xmin !== cal.xmax && cal.ymin !== cal.ymax;
+    if (![cal.xmin, cal.xmax, cal.ymin, cal.ymax].every(function (v) { return isFinite(v); })) return false;
+    if (cal.xmin === cal.xmax || cal.ymin === cal.ymax) return false;
+    if (cal.xlog && (cal.xmin <= 0 || cal.xmax <= 0)) return false;
+    if (cal.ylog && (cal.ymin <= 0 || cal.ymax <= 0)) return false;
+    return true;
   }
 
   function digBuildSpec() {
@@ -7058,7 +7069,12 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
       vscodeApi.postMessage({ type: "notify", level: "warn", text: "Chaz Plots : renseignez X min/max et Y min/max." });
       return null;
     }
-    return CurveDigitize.buildSpec(digSelectedCurves(), digState.box, cal, "Digitalisation");
+    const selected = digSelectedCurves();
+    if (selected.length === 0) {
+      vscodeApi.postMessage({ type: "notify", level: "warn", text: "Chaz Plots : aucune courbe selectionnee." });
+      return null;
+    }
+    return CurveDigitize.buildSpec(selected, digState.box, cal, "Digitalisation");
   }
 
   document.getElementById("digClose").addEventListener("click", function () {

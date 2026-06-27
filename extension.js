@@ -746,7 +746,10 @@ function finishExportBatchTick(batch) {
 function saveCsv(msg) {
   if (!msg || typeof msg.csv !== "string") { return; }
   const fig = figures.find(function (f) { return f.id === msg.id; });
-  const base = fig ? defaultName(fig, "csv") : (msg.id === "compare" ? "comparaison.csv" : "donnees.csv");
+  let base;
+  if (fig) base = defaultName(fig, "csv");
+  else if (msg.base) base = String(msg.base).replace(/[^a-zA-Z0-9_\-]/g, "_") + ".csv";
+  else base = msg.id === "compare" ? "comparaison.csv" : "donnees.csv";
   vscode.window.showSaveDialog({
     defaultUri: vscode.Uri.file(path.join(workspaceDir(), base)),
     filters: { "CSV": ["csv"] }
