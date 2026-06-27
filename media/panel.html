@@ -7081,7 +7081,12 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
       digState.box = CurveDigitize.detectPlotBox(img) || { x0: 0, y0: 0, x1: w - 1, y1: h - 1 };
       const brush = document.getElementById("digBrushCanvas");
       brush.width = w; brush.height = h; brush.getContext("2d").clearRect(0, 0, w, h);
+      // reinitialiser TOUTE la calibration (sinon les valeurs du graphe precedent restent)
       digRefs.x1 = digRefs.x2 = digRefs.y1 = digRefs.y2 = null;
+      ["digCalibXmin", "digCalibXmax", "digCalibYmin", "digCalibYmax"].forEach(function (id) { document.getElementById(id).value = ""; });
+      document.querySelectorAll("#digCalibRows .digRefVal").forEach(function (el) { el.value = ""; });
+      document.getElementById("digXlog").checked = false;
+      document.getElementById("digYlog").checked = false;
       digSetMode("none"); updateCalibStatus();
       const clusters = CurveDigitize.clusterCurveColors(img, digState.box);
       digState.curves = CurveDigitize.extractCurves(clusters, digState.box);
