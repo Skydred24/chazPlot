@@ -86,10 +86,37 @@
       .sort(function (a, b) { return b.pixels.length - a.pixels.length; });
   }
 
+  function detectLineStyle(pixels, box) {
+    if (!pixels.length) return { style: "markers" };
+    const colRows = {};
+    let minx = Infinity, maxx = -Infinity;
+    for (let k = 0; k < pixels.length; k++) {
+      const p = pixels[k];
+      (colRows[p.x] = colRows[p.x] || []).push(p.y);
+      if (p.x < minx) minx = p.x;
+      if (p.x > maxx) maxx = p.x;
+    }
+    const span = maxx - minx + 1;
+    let present = 0, totalHeight = 0;
+    for (let x = minx; x <= maxx; x++) {
+      const ys = colRows[x];
+      if (!ys) continue;
+      present++;
+      totalHeight += Math.max.apply(null, ys) - Math.min.apply(null, ys) + 1;
+    }
+    const coverage = present / span;
+    const avgHeight = totalHeight / present;
+    if (avgHeight >= 3 && coverage < 0.85) return { style: "markers" };
+    if (coverage >= 0.85) return { style: "solid" };
+    if (coverage >= 0.45) return { style: "dashed" };
+    return { style: "dotted" };
+  }
+
   return {
     pixelsToData: pixelsToData,
     detectBackground: detectBackground,
     detectPlotBox: detectPlotBox,
-    clusterCurveColors: clusterCurveColors
+    clusterCurveColors: clusterCurveColors,
+    detectLineStyle: detectLineStyle
   };
 });

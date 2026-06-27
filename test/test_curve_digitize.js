@@ -87,6 +87,25 @@ check("clusterCurveColors : 2 courbes colorees -> 2 clusters", function () {
   assert.strictEqual(blues.length, 1);
 });
 
+check("detectLineStyle : solid / dashed / dotted / markers", function () {
+  const box = { x0: 0, y0: 0, x1: 100, y1: 50 };
+  function cols(present, builder) {
+    const px = [];
+    for (let x = 0; x < 100; x++) if (present(x)) builder(px, x);
+    return px;
+  }
+  const solid = cols(function () { return true; }, function (px, x) { px.push({ x: x, y: 25 }); });
+  const dashed = cols(function (x) { return (x % 10) < 6; }, function (px, x) { px.push({ x: x, y: 25 }); });
+  const dotted = cols(function (x) { return (x % 5) === 0; }, function (px, x) { px.push({ x: x, y: 25 }); });
+  const markers = cols(function (x) { return (x % 20) < 3; }, function (px, x) {
+    for (let dy = -2; dy <= 2; dy++) px.push({ x: x, y: 25 + dy });
+  });
+  assert.strictEqual(CD.detectLineStyle(solid, box).style, "solid");
+  assert.strictEqual(CD.detectLineStyle(dashed, box).style, "dashed");
+  assert.strictEqual(CD.detectLineStyle(dotted, box).style, "dotted");
+  assert.strictEqual(CD.detectLineStyle(markers, box).style, "markers");
+});
+
 // exporter les helpers pour les taches suivantes du meme fichier
 module.exports = { makeImage: makeImage, setPx: setPx, drawHLine: drawHLine, drawVLine: drawVLine, drawSeg: drawSeg };
 
