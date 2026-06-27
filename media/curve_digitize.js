@@ -20,7 +20,23 @@
     });
   }
 
+  function detectBackground(img, box) {
+    const counts = {};
+    for (let y = box.y0; y <= box.y1; y++) {
+      for (let x = box.x0; x <= box.x1; x++) {
+        const i = (y * img.width + x) * 4;
+        const k = (img.data[i] >> 3) + "_" + (img.data[i + 1] >> 3) + "_" + (img.data[i + 2] >> 3);
+        counts[k] = (counts[k] || 0) + 1;
+      }
+    }
+    let best = null, bestN = -1;
+    for (const k in counts) { if (counts[k] > bestN) { bestN = counts[k]; best = k; } }
+    const p = best.split("_").map(Number);
+    return { r: (p[0] << 3) | 7, g: (p[1] << 3) | 7, b: (p[2] << 3) | 7 };
+  }
+
   return {
-    pixelsToData: pixelsToData
+    pixelsToData: pixelsToData,
+    detectBackground: detectBackground
   };
 });

@@ -55,6 +55,13 @@ check("pixelsToData : echelle log en X", function () {
   assert.ok(Math.abs(out[0].x - Math.pow(10, 1.5)) < 1e-6);
 });
 
+check("detectBackground : fond blanc malgre quelques pixels colores", function () {
+  const img = makeImage(40, 30);
+  drawSeg(img, 0, 0, 39, 29, [200, 0, 0]); // une diagonale rouge
+  const bg = CD.detectBackground(img, { x0: 0, y0: 0, x1: 39, y1: 29 });
+  assert.ok(bg.r >= 240 && bg.g >= 240 && bg.b >= 240, "fond proche du blanc");
+});
+
 // exporter les helpers pour les taches suivantes du meme fichier
 module.exports = { makeImage: makeImage, setPx: setPx, drawHLine: drawHLine, drawVLine: drawVLine, drawSeg: drawSeg };
 
