@@ -580,6 +580,12 @@
   #digitizeOverlay .dig-curves{ max-height:22vh; overflow:auto; display:flex; flex-direction:column; gap:4px; }
   #digitizeOverlay .dig-curves label{ display:flex; align-items:center; gap:6px; font-size:12px; }
   #digitizeOverlay .dig-actions{ display:flex; flex-wrap:wrap; gap:8px; }
+  #digitizeOverlay .dig-help{ margin:2px 0; font-size:12px; opacity:.8; line-height:1.4; }
+  #digitizeOverlay .dig-step{ border:1px solid var(--sp-border, #3c3c3c); border-radius:6px; padding:8px 10px; display:flex; flex-direction:column; gap:6px; }
+  #digitizeOverlay .dig-step-h{ font-weight:600; font-size:12px; color: var(--sp-accent, #3794ff); }
+  #digitizeOverlay .dig-calibrows label{ display:inline-flex; align-items:center; gap:4px; font-size:12px; margin-left:6px; }
+  #digitizeOverlay .dig-fallback{ font-size:12px; opacity:.85; }
+  #digitizeOverlay .dig-fallback summary{ cursor:pointer; }
 
   /* ----- Comparaison ----- */
   .compare-body{ flex:1; min-height:0; display:flex; background: var(--sp-plot-bg); }
@@ -894,36 +900,51 @@
 <div id="digitizeOverlay" class="overlay" style="display:none">
   <div class="overlay-card">
     <div class="overlay-head">Digitalisation d'une image<button id="digClose" title="Fermer">&#x2715;</button></div>
+    <p class="dig-help">But : retrouver les données (points X/Y) d'une figure. Suivez les 3 étapes ci-dessous.</p>
     <div class="dig-canvas-wrap">
       <canvas id="digCanvas"></canvas>
       <canvas id="digBrushCanvas"></canvas>
     </div>
-    <div class="dig-tools">
-      <button id="digBrushBtn" title="Peindre la zone d'UNE courbe a extraire (glisser sur le trait)">Brosse</button>
-      <label style="font-size:12px">Largeur <input id="digBrushSize" type="range" min="3" max="40" value="10"></label>
-      <button id="digBrushExtract" title="Extraire la courbe dans la zone peinte">Extraire la zone</button>
-      <button id="digBrushClear" title="Effacer la zone peinte">Effacer zone</button>
-      <button id="digCalibBtn" title="Definir les axes en cliquant 2 points de valeur connue par axe">Calibrer par clics</button>
+
+    <div class="dig-step">
+      <div class="dig-step-h">Étape 1 · Calibrer les axes</div>
+      <p class="dig-help">Pour chaque repère : cliquez « Placer », puis cliquez le point correspondant sur l'image (ex. une graduation de l'axe), et tapez sa valeur. Il faut 2 points par axe.</p>
+      <div id="digCalibRows" class="dig-calibrows">
+        <div>X : <button class="digRefBtn" data-ref="x1">Placer X&#8321;</button> <input class="digRefVal" data-ref="x1" type="number" step="any" placeholder="valeur X&#8321;"> <button class="digRefBtn" data-ref="x2">Placer X&#8322;</button> <input class="digRefVal" data-ref="x2" type="number" step="any" placeholder="valeur X&#8322;"> <label><input id="digXlog" type="checkbox"> X log</label></div>
+        <div>Y : <button class="digRefBtn" data-ref="y1">Placer Y&#8321;</button> <input class="digRefVal" data-ref="y1" type="number" step="any" placeholder="valeur Y&#8321;"> <button class="digRefBtn" data-ref="y2">Placer Y&#8322;</button> <input class="digRefVal" data-ref="y2" type="number" step="any" placeholder="valeur Y&#8322;"> <label><input id="digYlog" type="checkbox"> Y log</label></div>
+        <div id="digCalibStatus" class="dig-calibstatus">Repères : aucun.</div>
+      </div>
+      <details class="dig-fallback">
+        <summary>Plus rapide si les axes vont jusqu'aux bords du cadre</summary>
+        <div class="dig-calib">
+          <label>X min <input id="digCalibXmin" type="number" step="any"></label>
+          <label>X max <input id="digCalibXmax" type="number" step="any"></label>
+          <label>Y min <input id="digCalibYmin" type="number" step="any"></label>
+          <label>Y max <input id="digCalibYmax" type="number" step="any"></label>
+        </div>
+      </details>
     </div>
-    <div id="digCalibRows" class="dig-calibrows" style="display:none">
-      <div>X : <button class="digRefBtn" data-ref="x1">Placer X&#8321;</button> <input class="digRefVal" data-ref="x1" type="number" step="any" placeholder="valeur X&#8321;"> <button class="digRefBtn" data-ref="x2">Placer X&#8322;</button> <input class="digRefVal" data-ref="x2" type="number" step="any" placeholder="valeur X&#8322;"></div>
-      <div>Y : <button class="digRefBtn" data-ref="y1">Placer Y&#8321;</button> <input class="digRefVal" data-ref="y1" type="number" step="any" placeholder="valeur Y&#8321;"> <button class="digRefBtn" data-ref="y2">Placer Y&#8322;</button> <input class="digRefVal" data-ref="y2" type="number" step="any" placeholder="valeur Y&#8322;"></div>
-      <div id="digCalibStatus" class="dig-calibstatus">Reperes : aucun. Cliquez « Placer » puis le point sur l'image.</div>
+
+    <div class="dig-step">
+      <div class="dig-step-h">Étape 2 · Récupérer les courbes</div>
+      <p class="dig-help">Les courbes détectées automatiquement sont listées plus bas — décochez les fausses. Sur une figure compliquée (courbes qui se croisent, légende…), utilisez la <b>Brosse</b> : cliquez « Brosse », glissez le long d'UNE courbe, puis « Extraire la zone ». Ou « Manuel » : un clic sur un trait = une courbe.</p>
+      <div class="dig-tools">
+        <button id="digBrushBtn" title="Peindre la zone d'UNE courbe (glisser sur le trait)">Brosse</button>
+        <label style="font-size:12px">Largeur <input id="digBrushSize" type="range" min="3" max="40" value="10"></label>
+        <button id="digBrushExtract" title="Extraire la courbe dans la zone peinte">Extraire la zone</button>
+        <button id="digBrushClear" title="Effacer la zone peinte">Effacer zone</button>
+        <button id="digManualBtn" title="1 clic sur le trait = 1 courbe de cette couleur (clic droit annule)">Manuel (pointer)</button>
+      </div>
+      <div id="digCurveList" class="dig-curves"></div>
     </div>
-    <div class="dig-calib">
-      <label>X min <input id="digCalibXmin" type="number" step="any"></label>
-      <label>X max <input id="digCalibXmax" type="number" step="any"></label>
-      <label><input id="digXlog" type="checkbox"> X log</label>
-      <label>Y min <input id="digCalibYmin" type="number" step="any"></label>
-      <label>Y max <input id="digCalibYmax" type="number" step="any"></label>
-      <label><input id="digYlog" type="checkbox"> Y log</label>
-    </div>
-    <div id="digCurveList" class="dig-curves"></div>
-    <div class="dig-actions">
-      <button id="digManualBtn" title="Pointer une courbe : 1 clic sur le trait = 1 courbe de cette couleur (clic droit annule)">Manuel (pointer)</button>
-      <button id="digOutFigure">Nouvelle figure</button>
-      <button id="digOutCsv">Exporter CSV</button>
-      <button id="digOutCode">Generer le code</button>
+
+    <div class="dig-step">
+      <div class="dig-step-h">Étape 3 · Exporter</div>
+      <div class="dig-actions">
+        <button id="digOutFigure">Nouvelle figure</button>
+        <button id="digOutCsv">Exporter CSV</button>
+        <button id="digOutCode">Générer le code</button>
+      </div>
     </div>
   </div>
 </div>
@@ -7222,10 +7243,6 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
   });
 
   // -- Calibration par clics : placer 2 reperes par axe + leurs valeurs.
-  document.getElementById("digCalibBtn").addEventListener("click", function () {
-    const rows = document.getElementById("digCalibRows");
-    rows.style.display = (rows.style.display === "none") ? "block" : "none";
-  });
   function digRefValEl(r) { return document.querySelector('#digCalibRows input[data-ref="' + r + '"]'); }
   function updateCalibStatus() {
     const el = document.getElementById("digCalibStatus"); if (!el) return;
