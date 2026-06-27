@@ -60,9 +60,36 @@
     return { x0: cols[0], y0: rows[0], x1: cols[cols.length - 1], y1: rows[rows.length - 1] };
   }
 
+  function clusterCurveColors(img, box, opts) {
+    opts = opts || {};
+    const bg = opts.bg || detectBackground(img, box);
+    const bgDist = opts.bgDist != null ? opts.bgDist : 40;
+    const mergeTol = opts.mergeTol != null ? opts.mergeTol : 40;
+    const minPixels = opts.minPixels != null ? opts.minPixels : 8;
+    const clusters = [];
+    for (let y = box.y0 + 1; y < box.y1; y++) {
+      for (let x = box.x0 + 1; x < box.x1; x++) {
+        const i = (y * img.width + x) * 4;
+        const r = img.data[i], g = img.data[i + 1], b = img.data[i + 2];
+        if (Math.abs(r - bg.r) + Math.abs(g - bg.g) + Math.abs(b - bg.b) < bgDist) continue;
+        let found = null;
+        for (let k = 0; k < clusters.length; k++) {
+          const c = clusters[k].color;
+          if (Math.abs(c[0] - r) + Math.abs(c[1] - g) + Math.abs(c[2] - b) <= mergeTol) { found = clusters[k]; break; }
+        }
+        if (found) found.pixels.push({ x: x, y: y });
+        else clusters.push({ color: [r, g, b], pixels: [{ x: x, y: y }] });
+      }
+    }
+    return clusters
+      .filter(function (c) { return c.pixels.length >= minPixels; })
+      .sort(function (a, b) { return b.pixels.length - a.pixels.length; });
+  }
+
   return {
     pixelsToData: pixelsToData,
     detectBackground: detectBackground,
-    detectPlotBox: detectPlotBox
+    detectPlotBox: detectPlotBox,
+    clusterCurveColors: clusterCurveColors
   };
 });

@@ -72,6 +72,21 @@ check("detectPlotBox : cadre noir detecte", function () {
   assert.deepStrictEqual(box, { x0: 10, y0: 10, x1: 110, y1: 90 });
 });
 
+check("clusterCurveColors : 2 courbes colorees -> 2 clusters", function () {
+  const img = makeImage(120, 100);
+  drawVLine(img, 10, 10, 90, [0, 0, 0]); drawVLine(img, 110, 10, 90, [0, 0, 0]);
+  drawHLine(img, 10, 10, 110, [0, 0, 0]); drawHLine(img, 90, 10, 110, [0, 0, 0]);
+  const box = { x0: 10, y0: 10, x1: 110, y1: 90 };
+  drawSeg(img, 20, 80, 100, 20, [220, 0, 0]);   // rouge montante
+  drawSeg(img, 20, 20, 100, 80, [0, 0, 220]);   // bleue descendante
+  const clusters = CD.clusterCurveColors(img, box);
+  assert.strictEqual(clusters.length, 2);
+  const reds = clusters.filter(function (c) { return c.color[0] > 150 && c.color[2] < 80; });
+  const blues = clusters.filter(function (c) { return c.color[2] > 150 && c.color[0] < 80; });
+  assert.strictEqual(reds.length, 1);
+  assert.strictEqual(blues.length, 1);
+});
+
 // exporter les helpers pour les taches suivantes du meme fichier
 module.exports = { makeImage: makeImage, setPx: setPx, drawHLine: drawHLine, drawVLine: drawVLine, drawSeg: drawSeg };
 
