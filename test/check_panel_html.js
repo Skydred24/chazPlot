@@ -13,6 +13,7 @@ const placeholders = [
   "{{measureMathUri}}", "{{csvExportUri}}", "{{compareUtilUri}}",
   "{{bundleMetaUri}}", "{{figureFilterUri}}", "{{pdfExportUri}}",
   "{{legendEditUri}}", "{{autoscaleUri}}", "{{dataImportUri}}", "{{boardLayoutUri}}",
+  "{{curveDigitizeUri}}",
   "{{customPlotStylesJson}}",
 ];
 const requiredIds = [
@@ -35,6 +36,9 @@ const requiredIds = [
   "boardBtn", "boardOverlay", "boardTitleInput", "boardRows", "boardCols",
   "boardWidth", "boardLegend", "boardOrder", "boardPreview", "boardHint",
   "boardClose", "boardCancel", "boardCompose",
+  "digitizeImage", "digitizeOverlay", "digCalibXmin", "digCalibXmax",
+  "digCalibYmin", "digCalibYmax", "digXlog", "digYlog", "digCurveList",
+  "digManualBtn", "digOutFigure", "digOutCsv", "digOutCode", "digClose",
 ];
 
 const errors = [];

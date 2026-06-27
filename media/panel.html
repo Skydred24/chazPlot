@@ -17,6 +17,7 @@
 <script src="{{autoscaleUri}}"></script>
 <script src="{{dataImportUri}}"></script>
 <script src="{{boardLayoutUri}}"></script>
+<script src="{{curveDigitizeUri}}"></script>
 <style>
   :root{
     color-scheme: light dark;
@@ -648,6 +649,7 @@
       <div class="action-menu-list">
         <button id="importCsv" title="Importer un fichier .csv/.dat comme nouveau graphe (ou glisser-deposer sur un graphe pour superposer)"><span class="menu-icon"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h5l3 3v8H4zM9 2.5v3h3M6 8h4M6 10.5h4"/></svg></span><span>Importer CSV/DAT</span></button>
         <button id="importImage" title="Generer le code matplotlib qui reproduit la courbe, depuis une image PNG/SVG auto-portee (exportee par Chaz Plots)"><span class="menu-icon"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4h10v8H3zM5 10l2-2 1.5 1.5L10.5 7 13 10"/></svg></span><span>Image &rarr; code</span></button>
+        <button id="digitizeImage" title="Extraire les points d'une figure depuis un PNG/SVG quelconque (non genere par Chaz Plots) : detection auto des courbes par couleur/style, calibration des axes, sortie figure/CSV/code"><span class="menu-icon"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4h10v8H3zM5 8l2 2 4-4"/></svg></span><span>Digitaliser</span></button>
         <button id="pasteFig" title="Coller ici la figure copiee (depuis cette fenetre ou une autre)"><span class="menu-icon"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5h4M5 5h6v8H5zM4 6.5H3v6h1"/></svg></span><span>Coller une figure</span></button>
         <div class="menu-sep" aria-hidden="true"></div>
         <button class="danger" id="deleteAll" title="Supprimer toutes les figures de l historique"><span class="menu-icon"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.3 4.5V3h3.4v1.5M4.6 4.5 5.3 13.3h5.4l.7-8.8M7 7v3.8M9 7v3.8"/></svg></span><span>Tout supprimer</span></button>
@@ -857,6 +859,28 @@
     <button class="compact le-guideshape-field" id="leDeleteGuide">Supprimer</button>
     <button class="compact" id="leClose">Fermer</button>
   </div>
+
+<div id="digitizeOverlay" class="overlay" style="display:none">
+  <div class="overlay-card">
+    <div class="overlay-head">Digitalisation d'une image<button id="digClose" title="Fermer">&#x2715;</button></div>
+    <canvas id="digCanvas"></canvas>
+    <div class="dig-calib">
+      <label>X min <input id="digCalibXmin" type="number" step="any"></label>
+      <label>X max <input id="digCalibXmax" type="number" step="any"></label>
+      <label><input id="digXlog" type="checkbox"> X log</label>
+      <label>Y min <input id="digCalibYmin" type="number" step="any"></label>
+      <label>Y max <input id="digCalibYmax" type="number" step="any"></label>
+      <label><input id="digYlog" type="checkbox"> Y log</label>
+    </div>
+    <div id="digCurveList" class="dig-curves"></div>
+    <div class="dig-actions">
+      <button id="digManualBtn" title="L'auto a echoue ? Cliquer un point de depart sur chaque courbe litigieuse">Recommencer en manuel</button>
+      <button id="digOutFigure">Nouvelle figure</button>
+      <button id="digOutCsv">Exporter CSV</button>
+      <button id="digOutCode">Generer le code</button>
+    </div>
+  </div>
+</div>
 
 <script nonce="{{nonce}}">
 window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
@@ -6653,6 +6677,7 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
   // glisser : le glisser-deposer de fichier exige Shift (VS Code intercepte
   // sinon), d'ou ce bouton. Reutilise routeSystemImage -> importImageData.
   let imageFileInput = null;
+  let importFileMode = "image"; // "image" | "digitize"
   function ensureImageInput(){
     if (imageFileInput){ return imageFileInput; }
     imageFileInput = document.createElement("input");
@@ -6662,7 +6687,17 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     imageFileInput.style.display = "none";
     imageFileInput.addEventListener("change", function(){
       const files = imageFileInput.files;
-      if (files){ for (let i = 0; i < files.length; i++){ routeSystemImage(files[i]); } }
+      if (files && importFileMode === "digitize"){
+        if (files.length > 0){
+          const url = URL.createObjectURL(files[0]);
+          const im = new Image();
+          im.onload = function(){ URL.revokeObjectURL(url); digOpen(im); };
+          im.src = url;
+        }
+      } else if (files){
+        for (let i = 0; i < files.length; i++){ routeSystemImage(files[i]); }
+      }
+      importFileMode = "image";
       imageFileInput.value = "";   // permet de re-selectionner le meme fichier
     });
     document.body.appendChild(imageFileInput);
@@ -6720,8 +6755,17 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     if (files && files.length){
       for (let i = 0; i < files.length; i++){
         const f = files[i];
-        if (/\.(png|svg)$/i.test(f.name)){ routeSystemImage(f); }   // image -> recreation
-        else { queueCsvImport(readSystemFile(f), target); }         // csv/dat/txt -> overlay/nouveau
+        if (/\.(png|svg)$/i.test(f.name)){
+          if (e.altKey){
+            // Shift+Alt+drop : digitaliser l'image (pas de donnees Chaz Plots)
+            const url = URL.createObjectURL(f);
+            const im = new Image();
+            im.onload = function(){ URL.revokeObjectURL(url); digOpen(im); };
+            im.src = url;
+          } else {
+            routeSystemImage(f);   // image -> recreation (extraction donnees Chaz Plots)
+          }
+        } else { queueCsvImport(readSystemFile(f), target); }         // csv/dat/txt -> overlay/nouveau
       }
       return;
     }
@@ -6946,6 +6990,132 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
 
   document.getElementById("keepSelToggle").addEventListener("change", function(e){
     keepCompareSelection = !!e.target.checked;
+  });
+
+  // ----- Digitalisation d'une image quelconque -----
+  const digState = { img: null, box: null, curves: [], imageEl: null };
+
+  function digOpen(imgEl) {
+    const ov = document.getElementById("digitizeOverlay");
+    const canvas = document.getElementById("digCanvas");
+    const w = imgEl.naturalWidth, h = imgEl.naturalHeight;
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(imgEl, 0, 0);
+    const data = ctx.getImageData(0, 0, w, h);
+    const img = { width: w, height: h, data: data.data };
+    digState.img = img;
+    digState.imageEl = imgEl;
+    digState.box = CurveDigitize.detectPlotBox(img) || { x0: 0, y0: 0, x1: w - 1, y1: h - 1 };
+    const clusters = CurveDigitize.clusterCurveColors(img, digState.box);
+    digState.curves = CurveDigitize.extractCurves(clusters, digState.box);
+    renderDigCurveList();
+    ov.style.display = "flex";
+  }
+
+  function renderDigCurveList() {
+    const host = document.getElementById("digCurveList");
+    host.innerHTML = "";
+    digState.curves.forEach(function (c, i) {
+      const row = document.createElement("label");
+      const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.checked = true; cb.dataset.idx = String(i);
+      const sw = document.createElement("span");
+      sw.style.cssText = "display:inline-block;width:12px;height:12px;margin:0 6px;background:rgb(" + c.color.join(",") + ")";
+      const txt = document.createElement("span");
+      txt.textContent = c.style + " — " + c.points.length + " pts" + (c.ambiguous && c.ambiguous.length ? " ⚠ " + c.ambiguous.length + " zone(s) ambigue(s)" : "");
+      row.appendChild(cb); row.appendChild(sw); row.appendChild(txt);
+      host.appendChild(row);
+    });
+  }
+
+  function digCalib() {
+    return {
+      xmin: parseFloat(document.getElementById("digCalibXmin").value),
+      xmax: parseFloat(document.getElementById("digCalibXmax").value),
+      ymin: parseFloat(document.getElementById("digCalibYmin").value),
+      ymax: parseFloat(document.getElementById("digCalibYmax").value),
+      xlog: document.getElementById("digXlog").checked,
+      ylog: document.getElementById("digYlog").checked
+    };
+  }
+
+  function digSelectedCurves() {
+    const boxes = document.querySelectorAll("#digCurveList input[type=checkbox]");
+    const keep = [];
+    boxes.forEach(function (b) { if (b.checked) keep.push(digState.curves[Number(b.dataset.idx)]); });
+    return keep;
+  }
+
+  function digValidCalib(cal) {
+    return [cal.xmin, cal.xmax, cal.ymin, cal.ymax].every(function (v) { return isFinite(v); })
+      && cal.xmin !== cal.xmax && cal.ymin !== cal.ymax;
+  }
+
+  function digBuildSpec() {
+    const cal = digCalib();
+    if (!digValidCalib(cal)) {
+      vscodeApi.postMessage({ type: "notify", level: "warn", text: "Chaz Plots : renseignez X min/max et Y min/max." });
+      return null;
+    }
+    return CurveDigitize.buildSpec(digSelectedCurves(), digState.box, cal, "Digitalisation");
+  }
+
+  document.getElementById("digClose").addEventListener("click", function () {
+    document.getElementById("digitizeOverlay").style.display = "none";
+  });
+  document.getElementById("digOutFigure").addEventListener("click", function () {
+    const spec = digBuildSpec(); if (!spec) return;
+    vscodeApi.postMessage({ type: "createFigureFromData", title: spec.title, plotly: spec.plotly });
+    document.getElementById("digitizeOverlay").style.display = "none";
+  });
+  document.getElementById("digOutCode").addEventListener("click", function () {
+    const spec = digBuildSpec(); if (!spec) return;
+    vscodeApi.postMessage({ type: "generateCodeFromSpec", title: spec.title, spec: spec.plotly });
+  });
+  document.getElementById("digOutCsv").addEventListener("click", function () {
+    const spec = digBuildSpec(); if (!spec) return;
+    const rows = [["serie", "x", "y"]];
+    spec.plotly.data.forEach(function (t) {
+      for (let i = 0; i < t.x.length; i++) rows.push([t.name, t.x[i], t.y[i]]);
+    });
+    vscodeApi.postMessage({ type: "saveCsv", base: "digitalisation", csv: rows.map(function (r) { return r.join(","); }).join("\n") });
+  });
+
+  // Mode manuel : clic d'amorce sur le canvas pour chaque courbe litigieuse
+  let digManual = false, digSeeds = [];
+  document.getElementById("digManualBtn").addEventListener("click", function () {
+    digManual = true; digSeeds = [];
+    vscodeApi.postMessage({ type: "notify", level: "info", text: "Chaz Plots : mode manuel — cliquez un point de depart sur chaque courbe, puis « Nouvelle figure »." });
+  });
+  document.getElementById("digCanvas").addEventListener("click", function (ev) {
+    if (!digManual) return;
+    const canvas = document.getElementById("digCanvas");
+    const r = canvas.getBoundingClientRect();
+    const x = Math.round((ev.clientX - r.left) * canvas.width / r.width);
+    const y = Math.round((ev.clientY - r.top) * canvas.height / r.height);
+    digSeeds.push({ x: x, y: y });
+    // masque = tous les pixels d'avant-plan dans la boite
+    const img = digState.img, box = digState.box;
+    const bg = CurveDigitize.detectBackground(img, box);
+    const mask = [];
+    for (let yy = box.y0 + 1; yy < box.y1; yy++) {
+      for (let xx = box.x0 + 1; xx < box.x1; xx++) {
+        const pi = (yy * img.width + xx) * 4;
+        if (Math.abs(img.data[pi] - bg.r) + Math.abs(img.data[pi + 1] - bg.g) + Math.abs(img.data[pi + 2] - bg.b) >= 40)
+          mask.push({ x: xx, y: yy });
+      }
+    }
+    const traced = CurveDigitize.traceFromSeeds(mask, box, digSeeds);
+    digState.curves = traced.map(function (t, i) { return { color: [30, 30, 30], style: "solid", points: t.points, ambiguous: [], name: "courbe " + (i + 1) }; });
+    renderDigCurveList();
+  });
+
+  // Entree 1 : bouton barre d'outils — reutilise l'input file cache de l'import image
+  document.getElementById("digitizeImage").addEventListener("click", function () {
+    closeGlobalTools();
+    importFileMode = "digitize";
+    ensureImageInput().click();
   });
 
   refreshCount();
