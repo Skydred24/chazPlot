@@ -64,6 +64,12 @@ lecteur intégré, et tout est **persisté** d'une session à l'autre.
 - **Image -> code matplotlib** : les PNG/SVG exportes peuvent embarquer leurs
   donnees Plotly ; redeposez l'image dans Chaz Plots pour regenerer un script
   matplotlib propre.
+- **Digitalisation d'une image quelconque** : bouton « Digitaliser » pour extraire
+  les courbes d'une image PNG/SVG quelconque (graphe public, photographie, scan).
+  Détection automatique par couleur et style de trait ; calibration par 4 nombres
+  (min/max des axes X et Y) ; revue interactive avec cases à cocher ; mode manuel
+  par clics pour les cas ambigus. Les courbes extraites deviennent une nouvelle
+  figure, peuvent être exportées en CSV ou converties en code matplotlib.
 - **Planche multi-panneaux** : composez plusieurs figures selectionnees en une
   planche `(a)`, `(b)`, `(c)` avec grille, ordre, largeur cible et legende partagee.
 - **Copier-coller de figures** : copiez une figure dans une fenetre VS Code et
@@ -332,6 +338,17 @@ ajuster dans le code pour récupérer l'interactivité.
 - Les terminaux ouverts **avant** l'activation ne sont pas affectés : ouvrez-en
   un nouveau. Pour forcer le backend classique :
   `set MPLBACKEND=TkAgg` (cmd) ou `$env:MPLBACKEND="TkAgg"` (PowerShell).
+- **Digitalisation (PNG/SVG quelconques)** : la détection automatique des courbes
+  repose sur la couleur et le style de trait ; si deux courbes ont la même couleur
+  **ET** le même style, elles sont fusionnées → utilisez le mode manuel (clics de
+  points de départ) pour les cas litigieux. La légende ou du texte **dans la zone
+  graphe** peuvent être mal interprétés → décochez-les dans la revue interactive.
+  La détection de la boîte graphe suppose des **spines pleins** ; un graphe
+  dépourvu de spines ou avec des styles particuliers peut nécessiter un ajustement
+  manuel du rectangle. Pas d'OCR : les min/max d'axes se saisissent à la main
+  (4 nombres) ; cases log optionnelles pour les échelles logarithmiques. Les axes
+  secondaires, les axes cassés et les échelles polaires ne sont pas gérés. Les
+  courbes très fines ou de faible contraste peuvent être manquées.
 
 ## Architecture
 
