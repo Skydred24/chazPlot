@@ -39,6 +39,8 @@ const requiredIds = [
   "digitizeImage", "digitizeOverlay", "digCalibXmin", "digCalibXmax",
   "digCalibYmin", "digCalibYmax", "digXlog", "digYlog", "digCurveList",
   "digManualBtn", "digOutFigure", "digOutCsv", "digOutCode", "digClose",
+  "digBrushCanvas", "digBrushBtn", "digBrushSize", "digBrushExtract", "digBrushClear",
+  "digCalibBtn", "digCalibRows", "digCalibStatus",
 ];
 
 const errors = [];

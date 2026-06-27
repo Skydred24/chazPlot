@@ -378,6 +378,71 @@
     return { color: [cr, cg, cb], pixels: out };
   }
 
+  // Calibration par 2 points de reference par axe : calib = {x:{p0,v0,p1,v1,log}, y:{...}}.
+  // p = position pixel du repere, v = la valeur d'axe correspondante. Lineaire, ou
+  // interpolation en log10 si log. L'inversion Y est geree d'office (les pixels
+  // cliques portent deja le sens). Plus general que « bords de boite = min/max ».
+  function mapAxisRef(p, a) {
+    const frac = a.p1 === a.p0 ? 0 : (p - a.p0) / (a.p1 - a.p0);
+    if (a.log) {
+      const l0 = Math.log(a.v0) / Math.LN10, l1 = Math.log(a.v1) / Math.LN10;
+      return Math.pow(10, l0 + frac * (l1 - l0));
+    }
+    return a.v0 + frac * (a.v1 - a.v0);
+  }
+  function mapPoints(points, calib) {
+    return points.map(function (pt) {
+      return { x: mapAxisRef(pt.xpx, calib.x), y: mapAxisRef(pt.ypx, calib.y) };
+    });
+  }
+
+  // Extraction dans une REGION brossee (inMask(x,y) -> bool). Prend les pixels
+  // d'avant-plan de la zone, garde la couleur DOMINANTE (pour ignorer un bout
+  // d'une autre courbe effleuree), et renvoie une MEDIANE par colonne -> une
+  // courbe {color, points, style}. La brosse apporte la contrainte spatiale qui
+  // resout recouvrements / legendes / meme couleur.
+  function traceRegion(img, box, inMask, opts) {
+    opts = opts || {};
+    const bg = opts.bg || detectBackground(img, box);
+    const bgDist = opts.bgDist != null ? opts.bgDist : 50;
+    const colorTol = opts.colorTol != null ? opts.colorTol : 100;
+    const px = [];
+    for (let y = box.y0 + 1; y < box.y1; y++) {
+      for (let x = box.x0 + 1; x < box.x1; x++) {
+        if (!inMask(x, y)) continue;
+        const i = (y * img.width + x) * 4, r = img.data[i], g = img.data[i + 1], b = img.data[i + 2];
+        if (Math.abs(r - bg.r) + Math.abs(g - bg.g) + Math.abs(b - bg.b) < bgDist) continue;
+        px.push({ x: x, y: y, r: r, g: g, b: b });
+      }
+    }
+    if (!px.length) return { color: [0, 0, 0], points: [], style: "solid" };
+    const buckets = {};
+    for (let k = 0; k < px.length; k++) {
+      const p = px[k], key = (p.r >> 4) + "_" + (p.g >> 4) + "_" + (p.b >> 4);
+      const c = buckets[key] || (buckets[key] = { n: 0, r: 0, g: 0, b: 0 });
+      c.n++; c.r += p.r; c.g += p.g; c.b += p.b;
+    }
+    let bestK = null, bestN = -1;
+    for (const key in buckets) if (buckets[key].n > bestN) { bestN = buckets[key].n; bestK = key; }
+    const d = buckets[bestK];
+    const color = [Math.round(d.r / d.n), Math.round(d.g / d.n), Math.round(d.b / d.n)];
+    const byCol = {};
+    for (let k = 0; k < px.length; k++) {
+      const p = px[k];
+      if (Math.abs(p.r - color[0]) + Math.abs(p.g - color[1]) + Math.abs(p.b - color[2]) <= colorTol) {
+        (byCol[p.x] = byCol[p.x] || []).push(p.y);
+      }
+    }
+    const xs = Object.keys(byCol).map(Number).sort(function (a, b) { return a - b; });
+    const masked = [];
+    const points = xs.map(function (x) {
+      const ys = byCol[x].sort(function (a, b) { return a - b; });
+      for (let k = 0; k < ys.length; k++) masked.push({ x: x, y: ys[k] });
+      return { xpx: x, ypx: ys[(ys.length - 1) >> 1] };
+    });
+    return { color: color, points: points, style: detectLineStyle(masked, box).style };
+  }
+
   const DASH_FOR = { solid: "solid", dashed: "dash", dotted: "dot", markers: "solid" };
   function rgbCss(c) { return "rgb(" + c[0] + "," + c[1] + "," + c[2] + ")"; }
 
@@ -400,6 +465,26 @@
     return { title: title || "", plotly: { data: data, layout: layout } };
   }
 
+  // Variante avec calibration par reperes (calib = {x:{p0,v0,p1,v1,log}, y:{...}}).
+  function buildSpecMapped(curves, calib, title) {
+    const data = curves.map(function (c, i) {
+      const pts = mapPoints(c.points, calib);
+      return {
+        type: "scatter",
+        mode: c.style === "markers" ? "markers" : "lines",
+        x: pts.map(function (p) { return p.x; }),
+        y: pts.map(function (p) { return p.y; }),
+        line: { color: rgbCss(c.color), dash: DASH_FOR[c.style] || "solid" },
+        marker: { color: rgbCss(c.color) },
+        name: c.name || ("courbe " + (i + 1))
+      };
+    });
+    const layout = { xaxis: {}, yaxis: {} };
+    if (calib.x.log) layout.xaxis.type = "log";
+    if (calib.y.log) layout.yaxis.type = "log";
+    return { title: title || "", plotly: { data: data, layout: layout } };
+  }
+
   return {
     pixelsToData: pixelsToData,
     detectBackground: detectBackground,
@@ -409,6 +494,9 @@
     extractCurves: extractCurves,
     traceFromSeeds: traceFromSeeds,
     colorMaskAt: colorMaskAt,
-    buildSpec: buildSpec
+    mapPoints: mapPoints,
+    traceRegion: traceRegion,
+    buildSpec: buildSpec,
+    buildSpecMapped: buildSpecMapped
   };
 });

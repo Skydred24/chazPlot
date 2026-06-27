@@ -563,13 +563,20 @@
     font-weight:600; font-size:13px;
   }
   #digitizeOverlay .overlay-head button{ background:none; border:none; color:inherit; cursor:pointer; font-size:14px; }
+  #digitizeOverlay .dig-canvas-wrap{ position:relative; align-self:center; max-width:100%; line-height:0; }
   #digitizeOverlay #digCanvas{
-    max-width:100%; max-height:50vh; align-self:center;
+    display:block; max-width:100%; max-height:50vh;
     background:#fff; border:1px solid var(--sp-border, #3c3c3c);
   }
+  #digitizeOverlay #digBrushCanvas{ position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; }
   #digitizeOverlay .dig-calib{ display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; }
   #digitizeOverlay .dig-calib label{ display:flex; align-items:center; gap:4px; font-size:12px; }
   #digitizeOverlay .dig-calib input[type=number]{ width:90px; }
+  #digitizeOverlay .dig-tools{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  #digitizeOverlay .dig-tools .active{ outline:2px solid var(--sp-accent, #3794ff); }
+  #digitizeOverlay .dig-calibrows{ display:flex; flex-direction:column; gap:6px; font-size:12px; }
+  #digitizeOverlay .dig-calibrows input[type=number]{ width:90px; }
+  #digitizeOverlay .dig-calibstatus{ opacity:.8; font-size:11px; }
   #digitizeOverlay .dig-curves{ max-height:22vh; overflow:auto; display:flex; flex-direction:column; gap:4px; }
   #digitizeOverlay .dig-curves label{ display:flex; align-items:center; gap:6px; font-size:12px; }
   #digitizeOverlay .dig-actions{ display:flex; flex-wrap:wrap; gap:8px; }
@@ -887,7 +894,22 @@
 <div id="digitizeOverlay" class="overlay" style="display:none">
   <div class="overlay-card">
     <div class="overlay-head">Digitalisation d'une image<button id="digClose" title="Fermer">&#x2715;</button></div>
-    <canvas id="digCanvas"></canvas>
+    <div class="dig-canvas-wrap">
+      <canvas id="digCanvas"></canvas>
+      <canvas id="digBrushCanvas"></canvas>
+    </div>
+    <div class="dig-tools">
+      <button id="digBrushBtn" title="Peindre la zone d'UNE courbe a extraire (glisser sur le trait)">Brosse</button>
+      <label style="font-size:12px">Largeur <input id="digBrushSize" type="range" min="3" max="40" value="10"></label>
+      <button id="digBrushExtract" title="Extraire la courbe dans la zone peinte">Extraire la zone</button>
+      <button id="digBrushClear" title="Effacer la zone peinte">Effacer zone</button>
+      <button id="digCalibBtn" title="Definir les axes en cliquant 2 points de valeur connue par axe">Calibrer par clics</button>
+    </div>
+    <div id="digCalibRows" class="dig-calibrows" style="display:none">
+      <div>X : <button class="digRefBtn" data-ref="x1">Placer X&#8321;</button> <input class="digRefVal" data-ref="x1" type="number" step="any" placeholder="valeur X&#8321;"> <button class="digRefBtn" data-ref="x2">Placer X&#8322;</button> <input class="digRefVal" data-ref="x2" type="number" step="any" placeholder="valeur X&#8322;"></div>
+      <div>Y : <button class="digRefBtn" data-ref="y1">Placer Y&#8321;</button> <input class="digRefVal" data-ref="y1" type="number" step="any" placeholder="valeur Y&#8321;"> <button class="digRefBtn" data-ref="y2">Placer Y&#8322;</button> <input class="digRefVal" data-ref="y2" type="number" step="any" placeholder="valeur Y&#8322;"></div>
+      <div id="digCalibStatus" class="dig-calibstatus">Reperes : aucun. Cliquez « Placer » puis le point sur l'image.</div>
+    </div>
     <div class="dig-calib">
       <label>X min <input id="digCalibXmin" type="number" step="any"></label>
       <label>X max <input id="digCalibXmax" type="number" step="any"></label>
@@ -898,7 +920,7 @@
     </div>
     <div id="digCurveList" class="dig-curves"></div>
     <div class="dig-actions">
-      <button id="digManualBtn" title="L'auto a echoue ? Cliquer un point de depart sur chaque courbe litigieuse">Recommencer en manuel</button>
+      <button id="digManualBtn" title="Pointer une courbe : 1 clic sur le trait = 1 courbe de cette couleur (clic droit annule)">Manuel (pointer)</button>
       <button id="digOutFigure">Nouvelle figure</button>
       <button id="digOutCsv">Exporter CSV</button>
       <button id="digOutCode">Generer le code</button>
@@ -7036,6 +7058,10 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
       digState.img = img;
       digState.imageEl = imgEl;
       digState.box = CurveDigitize.detectPlotBox(img) || { x0: 0, y0: 0, x1: w - 1, y1: h - 1 };
+      const brush = document.getElementById("digBrushCanvas");
+      brush.width = w; brush.height = h; brush.getContext("2d").clearRect(0, 0, w, h);
+      digRefs.x1 = digRefs.x2 = digRefs.y1 = digRefs.y2 = null;
+      digSetMode("none"); updateCalibStatus();
       const clusters = CurveDigitize.clusterCurveColors(img, digState.box);
       digState.curves = CurveDigitize.extractCurves(clusters, digState.box);
       renderDigCurveList();
@@ -7088,14 +7114,17 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
   }
 
   function digBuildSpec() {
-    const cal = digCalib();
-    if (!digValidCalib(cal)) {
-      vscodeApi.postMessage({ type: "notify", level: "warn", text: "Chaz Plots : renseignez X min/max et Y min/max." });
-      return null;
-    }
     const selected = digSelectedCurves();
     if (selected.length === 0) {
       vscodeApi.postMessage({ type: "notify", level: "warn", text: "Chaz Plots : aucune courbe selectionnee." });
+      return null;
+    }
+    // calibration par clics si disponible, sinon bords de boite + min/max tapes
+    const cc = digClickCalib();
+    if (cc) return CurveDigitize.buildSpecMapped(selected, cc, "Digitalisation");
+    const cal = digCalib();
+    if (!digValidCalib(cal)) {
+      vscodeApi.postMessage({ type: "notify", level: "warn", text: "Chaz Plots : calibrez les axes (4 clics) ou renseignez X/Y min/max." });
       return null;
     }
     return CurveDigitize.buildSpec(selected, digState.box, cal, "Digitalisation");
@@ -7122,40 +7151,127 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     vscodeApi.postMessage({ type: "saveCsv", base: "digitalisation", csv: rows.map(function (r) { return r.join(","); }).join("\n") });
   });
 
-  // Mode manuel : clic d'amorce sur le canvas pour chaque courbe litigieuse
-  // Mode manuel COLORIMETRIQUE : on repart de zero et chaque clic sur un trait
-  // ajoute UNE courbe de la couleur cliquee (isole meme deux teintes voisines que
-  // l'auto fusionne, ex. deux oranges). Clic droit = annuler le dernier ajout.
-  let digManual = false;
-  document.getElementById("digManualBtn").addEventListener("click", function () {
-    digManual = true; digState.curves = [];
-    renderDigCurveList();
-    vscodeApi.postMessage({ type: "notify", level: "info", text: "Chaz Plots : mode manuel — cliquez UNE fois sur chaque courbe (sur le trait). Clic droit pour annuler le dernier. Puis « Nouvelle figure »." });
-  });
-  function digManualPick(ev) {
+  // ----- Modes du canvas : manuel (clic couleur), brosse (peindre une zone),
+  // calibration (placer des reperes d'axe). digMode pilote les pointer events. -----
+  let digMode = "none";   // none | manual | brush | calX1 | calX2 | calY1 | calY2
+  let digBrushing = false;
+  const digRefs = { x1: null, x2: null, y1: null, y2: null };
+
+  function digSetMode(m) {
+    digMode = m;
+    const canvas = document.getElementById("digCanvas");
+    canvas.style.cursor = (m && m !== "none") ? "crosshair" : "default";
+    document.getElementById("digBrushBtn").classList.toggle("active", m === "brush");
+    document.getElementById("digManualBtn").classList.toggle("active", m === "manual");
+  }
+  function digImgCoords(ev) {
     const canvas = document.getElementById("digCanvas");
     const r = canvas.getBoundingClientRect();
-    const x = Math.round((ev.clientX - r.left) * canvas.width / r.width);
-    const y = Math.round((ev.clientY - r.top) * canvas.height / r.height);
-    const img = digState.img, box = digState.box;
-    const m = CurveDigitize.colorMaskAt(img, box, x, y);
-    if (m.pixels.length < 10) {
-      vscodeApi.postMessage({ type: "notify", level: "warn", text: "Chaz Plots : aucun trait ici — cliquez bien sur la courbe." });
-      return;
-    }
-    const t = CurveDigitize.traceFromSeeds(m.pixels, box, [{ x: x, y: y }])[0];
+    return {
+      x: Math.round((ev.clientX - r.left) * canvas.width / r.width),
+      y: Math.round((ev.clientY - r.top) * canvas.height / r.height)
+    };
+  }
+
+  // -- Mode manuel colorimetrique : 1 clic sur un trait = 1 courbe de cette couleur
+  // (reliee au clic, voir colorMaskAt). Clic droit = annuler le dernier ajout.
+  document.getElementById("digManualBtn").addEventListener("click", function () {
+    digSetMode(digMode === "manual" ? "none" : "manual");
+    if (digMode === "manual") vscodeApi.postMessage({ type: "notify", level: "info", text: "Chaz Plots : mode manuel — cliquez sur chaque courbe (sur le trait). Clic droit annule le dernier." });
+  });
+  function digManualPick(ev) {
+    const c = digImgCoords(ev), img = digState.img, box = digState.box;
+    const m = CurveDigitize.colorMaskAt(img, box, c.x, c.y);
+    if (m.pixels.length < 10) { vscodeApi.postMessage({ type: "notify", level: "warn", text: "Chaz Plots : aucun trait ici — cliquez bien sur la courbe." }); return; }
+    const t = CurveDigitize.traceFromSeeds(m.pixels, box, [{ x: c.x, y: c.y }])[0];
     const style = CurveDigitize.detectLineStyle(m.pixels, box).style;
     digState.curves.push({ color: m.color, style: style, points: t.points, ambiguous: [], name: "courbe " + (digState.curves.length + 1) });
     renderDigCurveList();
   }
-  document.getElementById("digCanvas").addEventListener("click", function (ev) {
-    if (digManual) digManualPick(ev);
+
+  // -- Mode brosse : peindre la zone d'une courbe, puis « Extraire la zone ».
+  function digBrushPaint(ev) {
+    const c = digImgCoords(ev);
+    const ctx = document.getElementById("digBrushCanvas").getContext("2d");
+    const rad = parseInt(document.getElementById("digBrushSize").value, 10) || 10;
+    ctx.fillStyle = "rgba(0,150,255,0.35)";
+    ctx.beginPath(); ctx.arc(c.x, c.y, rad, 0, Math.PI * 2); ctx.fill();
+  }
+  document.getElementById("digBrushBtn").addEventListener("click", function () {
+    digSetMode(digMode === "brush" ? "none" : "brush");
+    if (digMode === "brush") vscodeApi.postMessage({ type: "notify", level: "info", text: "Chaz Plots : brosse — glissez sur le trait d'UNE courbe, puis « Extraire la zone »." });
   });
-  document.getElementById("digCanvas").addEventListener("contextmenu", function (ev) {
-    if (!digManual) return;
-    ev.preventDefault();
-    if (digState.curves.length) { digState.curves.pop(); renderDigCurveList(); }
+  document.getElementById("digBrushClear").addEventListener("click", function () {
+    const bc = document.getElementById("digBrushCanvas"); bc.getContext("2d").clearRect(0, 0, bc.width, bc.height);
   });
+  document.getElementById("digBrushExtract").addEventListener("click", function () {
+    if (!digState.img) return;
+    const w = digState.img.width, h = digState.img.height;
+    const bc = document.getElementById("digBrushCanvas");
+    const md = bc.getContext("2d").getImageData(0, 0, w, h).data;
+    let any = false;
+    for (let i = 3; i < md.length; i += 4) { if (md[i] > 0) { any = true; break; } }
+    if (!any) { vscodeApi.postMessage({ type: "notify", level: "warn", text: "Chaz Plots : peignez d'abord la zone d'une courbe (bouton Brosse)." }); return; }
+    function inMask(x, y) { return md[(y * w + x) * 4 + 3] > 0; }
+    const c = CurveDigitize.traceRegion(digState.img, digState.box, inMask);
+    if (!c.points.length) { vscodeApi.postMessage({ type: "notify", level: "warn", text: "Chaz Plots : aucune courbe dans la zone peinte." }); return; }
+    c.name = "courbe " + (digState.curves.length + 1); c.ambiguous = [];
+    digState.curves.push(c);
+    renderDigCurveList();
+    bc.getContext("2d").clearRect(0, 0, w, h); // pret pour la courbe suivante
+  });
+
+  // -- Calibration par clics : placer 2 reperes par axe + leurs valeurs.
+  document.getElementById("digCalibBtn").addEventListener("click", function () {
+    const rows = document.getElementById("digCalibRows");
+    rows.style.display = (rows.style.display === "none") ? "block" : "none";
+  });
+  function digRefValEl(r) { return document.querySelector('#digCalibRows input[data-ref="' + r + '"]'); }
+  function updateCalibStatus() {
+    const el = document.getElementById("digCalibStatus"); if (!el) return;
+    const placed = ["x1", "x2", "y1", "y2"].filter(function (k) { return digRefs[k]; });
+    el.textContent = placed.length === 4
+      ? "Reperes X₁ X₂ Y₁ Y₂ places ✓ — entrez leurs valeurs."
+      : "Reperes places : " + (placed.join(", ") || "aucun") + ". Cliquez « Placer » puis le point sur l'image.";
+  }
+  function digCaptureRef(ev) {
+    digRefs[digMode.slice(3).toLowerCase()] = digImgCoords(ev);
+    digSetMode("none"); updateCalibStatus();
+  }
+  function digClickCalib() {
+    if (!(digRefs.x1 && digRefs.x2 && digRefs.y1 && digRefs.y2)) return null;
+    const vx1 = parseFloat(digRefValEl("x1").value), vx2 = parseFloat(digRefValEl("x2").value);
+    const vy1 = parseFloat(digRefValEl("y1").value), vy2 = parseFloat(digRefValEl("y2").value);
+    if (![vx1, vx2, vy1, vy2].every(isFinite) || vx1 === vx2 || vy1 === vy2) return null;
+    const xlog = document.getElementById("digXlog").checked, ylog = document.getElementById("digYlog").checked;
+    if ((xlog && (vx1 <= 0 || vx2 <= 0)) || (ylog && (vy1 <= 0 || vy2 <= 0))) return null;
+    return {
+      x: { p0: digRefs.x1.x, v0: vx1, p1: digRefs.x2.x, v1: vx2, log: xlog },
+      y: { p0: digRefs.y1.y, v0: vy1, p1: digRefs.y2.y, v1: vy2, log: ylog }
+    };
+  }
+  document.querySelectorAll(".digRefBtn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      const ref = btn.getAttribute("data-ref");
+      digSetMode("cal" + ref.toUpperCase());
+      vscodeApi.postMessage({ type: "notify", level: "info", text: "Chaz Plots : cliquez le point " + ref.toUpperCase() + " sur l'image." });
+    });
+  });
+
+  // -- Dispatch des evenements du canvas selon le mode courant
+  (function () {
+    const canvas = document.getElementById("digCanvas");
+    canvas.addEventListener("pointerdown", function (ev) { if (digMode === "brush") { digBrushing = true; digBrushPaint(ev); } });
+    canvas.addEventListener("pointermove", function (ev) { if (digMode === "brush" && digBrushing) digBrushPaint(ev); });
+    window.addEventListener("pointerup", function () { digBrushing = false; });
+    canvas.addEventListener("click", function (ev) {
+      if (digMode === "manual") digManualPick(ev);
+      else if (digMode.indexOf("cal") === 0) digCaptureRef(ev);
+    });
+    canvas.addEventListener("contextmenu", function (ev) {
+      if (digMode === "manual") { ev.preventDefault(); if (digState.curves.length) { digState.curves.pop(); renderDigCurveList(); } }
+    });
+  })();
 
   // Entree 1 : bouton barre d'outils — reutilise l'input file cache de l'import image
   document.getElementById("digitizeImage").addEventListener("click", function () {

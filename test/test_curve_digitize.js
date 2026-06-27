@@ -232,6 +232,30 @@ check("colorMaskAt : exclut un echantillon de legende deconnecte (meme couleur)"
   assert.ok(m.pixels.every(function (p) { return p.y < 60; }), "n'inclut pas le swatch (y=115)");
 });
 
+check("mapPoints : 2 reperes par axe (lineaire + inversion Y)", function () {
+  const calib = { x: { p0: 100, v0: 0, p1: 1000, v1: 10, log: false }, y: { p0: 900, v0: 0, p1: 100, v1: 1, log: false } };
+  const out = CD.mapPoints([{ xpx: 550, ypx: 500 }], calib);
+  assert.ok(Math.abs(out[0].x - 5) < 1e-9, "x=5");
+  assert.ok(Math.abs(out[0].y - 0.5) < 1e-9, "y=0.5 (inversion)");
+});
+
+check("mapPoints : axe X log", function () {
+  const calib = { x: { p0: 0, v0: 1, p1: 100, v1: 1000, log: true }, y: { p0: 0, v0: 0, p1: 100, v1: 1, log: false } };
+  const out = CD.mapPoints([{ xpx: 50, ypx: 0 }], calib);
+  assert.ok(Math.abs(out[0].x - Math.pow(10, 1.5)) < 1e-6);
+});
+
+check("traceRegion : couleur dominante dans la zone + mediane par colonne", function () {
+  const img = makeImage(120, 100);
+  const box = { x0: 10, y0: 10, x1: 110, y1: 90 };
+  // courbe verte epaisse a y=40, + parasite magenta fin a y=70
+  for (let x = 20; x < 100; x++) { for (let dy = -1; dy <= 1; dy++) setPx(img, x, 40 + dy, [0, 150, 0]); setPx(img, x, 70, [200, 0, 200]); }
+  const c = CD.traceRegion(img, box, function () { return true; });
+  assert.ok(c.color[1] > 100 && c.color[0] < 80, "vert dominant");
+  assert.ok(c.points.length > 50, "points");
+  assert.ok(c.points.every(function (p) { return Math.abs(p.ypx - 40) <= 2; }), "suit le vert (y=40), ignore le magenta");
+});
+
 // exporter les helpers pour les taches suivantes du meme fichier
 module.exports = { makeImage: makeImage, setPx: setPx, drawHLine: drawHLine, drawVLine: drawVLine, drawSeg: drawSeg };
 
