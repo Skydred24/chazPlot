@@ -303,4 +303,85 @@ with plt.style.context(['science', 'ieee']):
     fig_c.canvas.manager.set_window_title("sciplot_science_ieee")
     plt.show()
 
-print("7 figures + 1 animation envoyees au panneau Graphes.")
+# =====================================================================
+# VERIF BARRES : empilement (bottom=) et groupes.
+# Attendu apres le fix _convert_bars (base par barre + barmode 'overlay') :
+#   - Empilement vertical  -> UNE SEULE tour par categorie (les segments
+#     s'empilent), PAS plusieurs mini-tours decalees cote a cote.
+#   - Empilement horizontal -> une seule barre par categorie.
+#   - Groupes (x decales manuellement) -> barres cote a cote, sans
+#     chevauchement.
+# =====================================================================
+cats = ["Lot A", "Lot B", "Lot C", "Lot D"]
+seg_bas = np.array([3.0, 5.0, 2.0, 4.0])
+seg_mid = np.array([2.0, 1.0, 4.0, 2.0])
+seg_haut = np.array([1.0, 2.0, 1.0, 3.0])
+
+# --- Empilement vertical : doit donner UNE tour par lot ---
+fig_bar, ax_bar = plt.subplots(figsize=(7, 4))
+ax_bar.bar(cats, seg_bas, label="Base", color="#4c72b0")
+ax_bar.bar(cats, seg_mid, bottom=seg_bas, label="Milieu", color="#dd8452")
+ax_bar.bar(cats, seg_haut, bottom=seg_bas + seg_mid, label="Haut", color="#55a868")
+ax_bar.set_ylabel("Quantite")
+ax_bar.set_title("Barres empilees : attendu = UNE tour par lot")
+ax_bar.legend()
+fig_bar.canvas.manager.set_window_title("barres_empilees")
+plt.show()
+
+# --- Empilement horizontal (barh + left=) ---
+fig_barh, ax_barh = plt.subplots(figsize=(7, 4))
+ax_barh.barh(cats, seg_bas, label="Base", color="#4c72b0")
+ax_barh.barh(cats, seg_mid, left=seg_bas, label="Milieu", color="#dd8452")
+ax_barh.barh(cats, seg_haut, left=seg_bas + seg_mid, label="Haut", color="#55a868")
+ax_barh.set_xlabel("Quantite")
+ax_barh.set_title("Barres empilees horizontales : une barre par lot")
+ax_barh.legend()
+fig_barh.canvas.manager.set_window_title("barres_empilees_h")
+plt.show()
+
+# --- Groupes : barres cote a cote (x decales a la main) ---
+idx = np.arange(len(cats))
+w = 0.4
+fig_grp, ax_grp = plt.subplots(figsize=(7, 4))
+ax_grp.bar(idx - w / 2, seg_bas, width=w, label="Serie 1", color="#4c72b0")
+ax_grp.bar(idx + w / 2, seg_mid, width=w, label="Serie 2", color="#dd8452")
+ax_grp.set_xticks(idx)
+ax_grp.set_xticklabels(cats)
+ax_grp.set_ylabel("Quantite")
+ax_grp.set_title("Barres groupees : attendu = cote a cote, sans chevauchement")
+ax_grp.legend()
+fig_grp.canvas.manager.set_window_title("barres_groupees")
+plt.show()
+
+print("10 figures + 1 animation envoyees au panneau Graphes.")
+
+
+# Génération de données aléatoires / au pif
+x = np.linspace(0, 10, 100)
+y1 = np.sin(x)
+y2 = np.cos(x) * np.exp(-x / 5)
+
+# Création des sous-graphes côte à côte : 1 ligne, 2 colonnes
+fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+
+# Premier graphe (à gauche)
+axes[0].plot(x, y1, color="crimson", label="Sinus")
+axes[0].set_title("Graphe Gauche (Sin)")
+axes[0].grid(True, alpha=0.3)
+axes[0].legend()
+
+# Deuxième graphe (à droite)
+axes[1].plot(x, y2, color="steelblue", label="Cosinus Amorti")
+axes[1].set_title("Graphe Droite (Cos)")
+axes[1].grid(True, alpha=0.3)
+axes[1].legend()
+
+# Ajuste la disposition pour éviter les chevauchements
+plt.tight_layout()
+
+# Donne un nom à la fenêtre (optionnel, repris par ton extension)
+fig.canvas.manager.set_window_title("demo_subplots_cote_a_cote")
+
+# Envoi au panneau d'extension
+plt.show()
+

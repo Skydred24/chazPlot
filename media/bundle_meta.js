@@ -38,7 +38,7 @@
       "% Pour un PDF vectoriel : inkscape --export-type=pdf " + base + "/figure.svg",
       "\\begin{figure}[htbp]",
       "  \\centering",
-      "  \\includegraphics[width=\\linewidth]{" + base + "/figure}",
+      "  \\includegraphics[width=\\columnwidth]{" + base + "/figure}",
       "  \\caption{" + texEscape(title) + "}",
       "  \\label{fig:" + base + "}",
       "\\end{figure}",

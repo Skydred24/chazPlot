@@ -38,6 +38,20 @@ class ConvertBaseTests(unittest.TestCase):
         bars = [t for t in spec["data"] if t["type"] == "bar"]
         self.assertTrue(bars and bars[0]["orientation"] == "h")
 
+    def test_stacked_bars_use_base_and_overlay(self):
+        # Empilement matplotlib (bottom=) -> chaque segment garde son offset via
+        # `base`, et le layout passe en barmode 'overlay' pour ne pas decaler les
+        # barres (sinon empilement casse en mini-tours cote a cote).
+        fig, ax = plt.subplots()
+        ax.bar(["a", "b"], [3, 5], label="bas")
+        ax.bar(["a", "b"], [2, 1], bottom=[3, 5], label="haut")
+        spec = convert_figure(fig)
+        self.assertEqual(spec["layout"]["barmode"], "overlay")
+        bars = [t for t in spec["data"] if t["type"] == "bar"]
+        self.assertEqual(len(bars), 2)
+        self.assertEqual(bars[0]["base"], [0.0, 0.0])
+        self.assertEqual(bars[1]["base"], [3.0, 5.0])
+
     def test_fill_between_becomes_filled_scatter(self):
         fig, ax = plt.subplots()
         ax.plot([0, 1, 2], [0, 1, 0])

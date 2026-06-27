@@ -15,6 +15,8 @@
 <script src="{{pdfExportUri}}"></script>
 <script src="{{legendEditUri}}"></script>
 <script src="{{autoscaleUri}}"></script>
+<script src="{{dataImportUri}}"></script>
+<script src="{{boardLayoutUri}}"></script>
 <style>
   :root{
     color-scheme: light dark;
@@ -47,25 +49,51 @@
   /* ----- Barre d'outils ----- */
   .toolbar{
     position:sticky; top:0; z-index:20;
-    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
-    padding:4px 14px;
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:8px 14px;
     background: var(--sp-surface-2);
     border-bottom:1px solid var(--sp-border);
+    box-shadow:0 1px 0 rgba(0,0,0,.12);
   }
   .toolbar button{ padding:4px 9px; }
-  .toolbar .brand{ font-weight:600; letter-spacing:.2px; display:flex; align-items:center; gap:8px; }
-  .toolbar .brand .dot{ width:9px; height:9px; border-radius:50%;
-    background: var(--sp-accent); box-shadow:0 0 0 3px var(--sp-accent-soft); }
-  .toolbar .count{ font-size:12px; opacity:.7; }
-  .toolbar .compare-status{ font-size:12px; opacity:.78; white-space:nowrap; }
-  .toolbar .search{ min-width:180px; width:20vw; max-width:320px; padding:5px 9px; border-radius:6px;
+  .toolbar .brand{ font-weight:650; letter-spacing:.2px; display:flex; align-items:center; gap:8px; min-width:0; }
+  .brand-icon{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:24px; height:24px; border-radius:6px;
+    background:var(--sp-accent-soft); color:var(--sp-accent);
+    border:1px solid color-mix(in srgb, var(--sp-accent) 40%, transparent);
+  }
+  .brand-icon svg, .toolbar svg{ width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+  .toolbar .count{
+    font-size:12px; color:var(--sp-text-dim); white-space:nowrap;
+    padding:2px 7px; border-radius:999px;
+    background:color-mix(in srgb, var(--sp-surface) 72%, transparent);
+    border:1px solid color-mix(in srgb, var(--sp-border) 70%, transparent);
+  }
+  .toolbar .selection-tools{
+    display:none; order:2; width:100%; align-items:center; gap:8px; flex-wrap:wrap;
+    margin-top:2px; padding:7px 8px;
+    border:1px solid color-mix(in srgb, var(--sp-accent) 25%, var(--sp-border));
+    border-radius:8px; background:color-mix(in srgb, var(--sp-accent) 8%, transparent);
+  }
+  .toolbar .selection-tools.show{ display:flex; }
+  .toolbar .compare-status{ font-size:12px; opacity:.9; white-space:nowrap; font-weight:650; }
+  .search-wrap{ position:relative; flex:1 1 300px; min-width:230px; max-width:620px; }
+  .search-wrap svg{ position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--sp-text-dim); pointer-events:none; }
+  .toolbar .search{
+    width:100%; height:30px; padding:5px 10px 5px 32px; border-radius:7px;
     border:1px solid var(--vscode-input-border, var(--sp-border)); background: var(--vscode-input-background);
     color: var(--vscode-input-foreground); font-family:inherit; font-size:12px;
-    transition: border-color .13s ease, box-shadow .13s ease; }
-  .toolbar .search:focus-visible{ outline:none; border-color: var(--sp-accent);
-    box-shadow:0 0 0 2px var(--sp-accent-soft); }
+    transition: border-color .13s ease, box-shadow .13s ease, background .13s ease;
+  }
+  .toolbar .search:focus-visible{ outline:none; border-color: var(--sp-accent); box-shadow:0 0 0 2px var(--sp-accent-soft); }
   .toolbar .spacer{ flex:1; }
-  label.fit{ font-size:12px; display:flex; align-items:center; gap:6px; opacity:.85; user-select:none; cursor:pointer; }
+  label.fit{ font-size:12px; display:flex; align-items:center; gap:6px; opacity:.88; user-select:none; cursor:pointer; white-space:nowrap; }
+  .fit-toggle{
+    height:30px; padding:0 10px; border:1px solid var(--sp-border); border-radius:7px;
+    background:color-mix(in srgb, var(--sp-surface) 72%, transparent);
+  }
+  .fit-toggle input{ accent-color:var(--sp-accent); }
 
   button{
     font-family:inherit; font-size:12px; cursor:pointer;
@@ -73,7 +101,7 @@
     background: var(--vscode-button-secondaryBackground);
     color: var(--vscode-button-secondaryForeground);
     border-radius:6px; padding:5px 11px;
-    transition: background .13s ease, transform .06s ease, box-shadow .13s ease;
+    transition: background .13s ease, transform .06s ease, box-shadow .13s ease, border-color .13s ease;
   }
   button:hover{ background: var(--vscode-button-secondaryHoverBackground); }
   button:active{ transform: translateY(1px); }
@@ -82,6 +110,7 @@
   button.primary:hover{ background: var(--vscode-button-hoverBackground); }
   button:disabled{ opacity:.4; cursor:default; }
   button.compact{ padding:4px 9px; }
+  .with-icon{ display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:30px; }
 
   /* groupe segmente (boutons de comparaison) */
   .segmented{ display:inline-flex; }
@@ -102,35 +131,34 @@
   .iconbtn:focus-visible{ outline:2px solid var(--sp-accent); outline-offset:1px; }
   .iconbtn.active{ background: var(--sp-accent-soft); border-color: var(--sp-accent); opacity:1; }
   .iconbtn.has-inset{ color: var(--sp-accent); opacity:1; }
-  .iconbtn svg{ width:16px; height:16px; fill:none; stroke: currentColor;
-    stroke-width:1.3; stroke-linecap:round; stroke-linejoin:round; }
-  .textbtn{
-    min-width:34px; height:28px; padding:0 8px; border-radius:6px;
-    font-weight:700; letter-spacing:.3px;
-  }
+  .iconbtn svg{ width:16px; height:16px; fill:none; stroke: currentColor; stroke-width:1.3; stroke-linecap:round; stroke-linejoin:round; }
+  .textbtn{ min-width:34px; height:28px; padding:0 8px; border-radius:6px; font-weight:700; letter-spacing:.3px; }
   .action-menu{ position:relative; display:inline-flex; }
   .action-menu summary{ list-style:none; }
   .action-menu summary::-webkit-details-marker{ display:none; }
   .action-menu-trigger{ user-select:none; }
-  .action-menu[open] .action-menu-trigger{
-    background: var(--vscode-toolbar-hoverBackground, rgba(127,127,127,.18));
-    opacity:1;
-  }
+  .action-menu[open] .action-menu-trigger{ background: var(--vscode-toolbar-hoverBackground, rgba(127,127,127,.18)); opacity:1; }
   .action-menu-list{
-    position:absolute; top:32px; right:0; z-index:35;
-    min-width:210px; padding:6px; display:flex; flex-direction:column; gap:3px;
-    background: var(--sp-surface);
-    border:1px solid var(--sp-border);
-    border-radius:8px;
-    box-shadow: var(--sp-shadow-2);
+    position:absolute; top:34px; right:0; z-index:35;
+    min-width:230px; padding:6px; display:flex; flex-direction:column; gap:3px;
+    background: var(--sp-surface); border:1px solid var(--sp-border); border-radius:8px; box-shadow: var(--sp-shadow-2);
   }
   .action-menu-list button{
-    width:100%; min-height:28px; text-align:left; border-color:transparent;
+    width:100%; min-height:30px; text-align:left; border-color:transparent; border-radius:6px;
     background:transparent; color:var(--sp-text); font-weight:500; letter-spacing:0;
+    display:flex; align-items:center; gap:9px;
   }
   .action-menu-list button:hover{ background: var(--vscode-toolbar-hoverBackground, rgba(127,127,127,.18)); }
   .action-menu-list button.danger{ color: var(--vscode-errorForeground, #f85149); }
-
+  .action-menu-list .menu-sep{ height:1px; margin:4px 2px; background:var(--sp-border); opacity:.75; }
+  .menu-icon{ width:18px; display:inline-flex; align-items:center; justify-content:center; color:var(--sp-text-dim); }
+  .action-menu-list button.danger .menu-icon{ color:var(--vscode-errorForeground, #f85149); }
+  .toolbar-tools .action-menu-trigger{
+    display:inline-flex; align-items:center; gap:7px; height:30px; padding:0 10px;
+    border:1px solid var(--vscode-button-border, transparent); border-radius:7px;
+    background:var(--vscode-button-secondaryBackground); color:var(--vscode-button-secondaryForeground); cursor:pointer;
+  }
+  .toolbar-tools .action-menu-list{ min-width:240px; }
   /* Menu flottant des outils de la modebar Plotly (zoom/pan/reset/auto + mesure + auto Y) */
   .modebar-menu{
     position:fixed; z-index:200; min-width:200px; padding:6px;
@@ -211,6 +239,8 @@
     padding:3px 10px 4px 34px; cursor:help;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
+  .prov.prov-clickable{ cursor:pointer; }
+  .prov.prov-clickable:hover{ color: var(--sp-text); text-decoration:underline; }
   .tagrow{ display:none; gap:5px; flex-wrap:wrap; padding:6px 10px 7px 34px; border-bottom:1px solid var(--sp-border); }
   .tagrow.show{ display:flex; }
   .tag{ font-size:10.5px; padding:2px 7px; border-radius:999px; color: var(--sp-text); background: var(--sp-accent-soft); border:1px solid var(--sp-border); }
@@ -274,6 +304,12 @@
   .legend-editor:not([data-guide="true"]) .le-guide-field{ display:none; }
   .legend-editor[data-mode="text"] .le-guide-field{ display:none; }
   .legend-editor[data-guide="true"] .le-marker-field{ display:none; }
+  /* Mode "legend" : seul le champ taille de legende est visible. */
+  .legend-editor:not([data-mode="legend"]) .le-legend-field{ display:none; }
+  .legend-editor[data-mode="legend"] .le-trace-field,
+  .legend-editor[data-mode="legend"] .le-text-field{ display:none; }
+  /* Bouton supprimer : uniquement pour une hline/vline (mode guideShape). */
+  .legend-editor:not([data-mode="guideShape"]) .le-guideshape-field{ display:none; }
   .legend-editor .le-inline{ flex-direction:row; align-items:center; gap:6px; height:26px; }
   .legend-editor .le-inline input{ min-width:0; width:auto; height:auto; }
   .publication-editor{
@@ -291,8 +327,22 @@
     background:var(--vscode-input-background); color:var(--vscode-input-foreground);
     font-family:inherit; font-size:12px;
   }
+  .publication-editor input{
+    height:28px; padding:2px 8px;
+    border:1px solid var(--vscode-input-border, var(--sp-border)); border-radius:6px;
+    background:var(--vscode-input-background); color:var(--vscode-input-foreground);
+    font-family:inherit; font-size:12px;
+  }
+  .publication-editor .pub-create select{ min-width:110px; }
   .publication-editor .pub-actions{ display:flex; gap:6px; align-items:flex-end; }
   .publication-editor .pub-hint{ width:100%; font-size:11px; color:var(--sp-text-dim); }
+  .publication-editor .pub-create{
+    width:100%; display:flex; gap:6px; flex-wrap:wrap; align-items:flex-end;
+    padding-top:8px; margin-top:2px; border-top:1px solid var(--sp-border);
+  }
+  .publication-editor:not([data-creating="true"]) .pub-create{ display:none; }
+  .publication-editor .pub-create input[type=number]{ width:64px; }
+  .publication-editor .pub-create input[type=text]{ min-width:130px; }
   .inset-connector-editor{
     position:fixed; right:16px; bottom:16px; z-index:121;
     display:none; align-items:flex-end; gap:10px; flex-wrap:wrap;
@@ -368,6 +418,73 @@
     border: 1px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
     transform: translateY(-50%); pointer-events: none;
   }
+
+  /* ----- Import de donnees (glisser un .csv/.dat) ----- */
+  .sp-drop-target{ outline:2px dashed var(--sp-accent); outline-offset:-3px; border-radius:8px; }
+  body.sp-file-dragging .card{ cursor:copy; }
+  .data-import-backdrop{ position:fixed; inset:0; z-index:300; background:rgba(0,0,0,.35); }
+  .data-import-dialog{
+    position:fixed; z-index:301; top:50%; left:50%; transform:translate(-50%,-50%);
+    min-width:300px; max-width:min(460px, calc(100vw - 32px));
+    max-height:calc(100vh - 48px); overflow:auto;
+    padding:16px 18px; display:flex; flex-direction:column; gap:10px;
+    border:1px solid var(--sp-border); border-radius:10px;
+    background:var(--sp-surface); color:var(--sp-text); box-shadow:var(--sp-shadow-2);
+  }
+  .data-import-dialog .di-title{ font-size:14px; font-weight:650; }
+  .data-import-dialog .di-sub{ font-size:11px; color:var(--sp-text-dim); margin-top:-4px; }
+  .data-import-dialog .di-field{ display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--sp-text-dim); }
+  .data-import-dialog .di-field input[type=text],
+  .data-import-dialog .di-field select{
+    height:28px; padding:2px 8px; border-radius:6px; font-family:inherit; font-size:12px;
+    border:1px solid var(--vscode-input-border, var(--sp-border));
+    background:var(--vscode-input-background); color:var(--vscode-input-foreground);
+  }
+  .data-import-dialog .di-ychecks{
+    display:flex; flex-wrap:wrap; gap:6px 14px; max-height:150px; overflow:auto;
+    padding:6px 8px; border:1px solid var(--sp-border); border-radius:6px;
+  }
+  .data-import-dialog .di-ycheck{ display:flex; align-items:center; gap:4px; font-size:12px; color:var(--sp-text); }
+  .data-import-dialog .di-ycheck.di-disabled{ opacity:.4; }
+  .data-import-dialog .di-btns{ display:flex; justify-content:flex-end; gap:8px; margin-top:4px; }
+  .data-import-dialog .textbtn.primary{ background:var(--sp-accent); color:#fff; border-color:var(--sp-accent); }
+
+  /* ----- Constructeur de planche multi-panneaux ----- */
+  .board-overlay{ position:fixed; inset:0; z-index:160; display:none; background:rgba(0,0,0,.4); }
+  .board-overlay.show{ display:flex; align-items:center; justify-content:center; }
+  .board-dialog{
+    display:flex; flex-direction:column; gap:10px;
+    width:min(920px, calc(100vw - 40px)); max-height:calc(100vh - 48px);
+    padding:14px 16px; border:1px solid var(--sp-border); border-radius:10px;
+    background:var(--sp-surface); color:var(--sp-text); box-shadow:var(--sp-shadow-2);
+  }
+  .board-head, .board-foot{ display:flex; align-items:center; gap:8px; }
+  .board-head .board-title{ font-size:14px; font-weight:650; }
+  .board-body{ display:flex; flex-direction:column; gap:10px; overflow:auto; }
+  .board-controls{ display:flex; flex-wrap:wrap; gap:8px 14px; align-items:flex-end; }
+  .board-controls label{ display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--sp-text-dim); }
+  .board-controls input, .board-controls select{
+    height:28px; padding:2px 8px; border-radius:6px; font-family:inherit; font-size:12px;
+    border:1px solid var(--vscode-input-border, var(--sp-border));
+    background:var(--vscode-input-background); color:var(--vscode-input-foreground);
+  }
+  .board-controls input[type=number]{ width:64px; }
+  .board-controls input[type=text]{ min-width:170px; }
+  .board-order-label{ font-size:11px; color:var(--sp-text-dim); margin-bottom:4px; }
+  .board-order{ display:flex; flex-wrap:wrap; gap:6px; }
+  .board-chip{
+    display:flex; align-items:center; gap:6px; cursor:grab; user-select:none;
+    padding:4px 9px; border:1px solid var(--sp-border); border-radius:14px;
+    background:var(--sp-surface-2, rgba(127,127,127,.12)); font-size:12px;
+  }
+  .board-chip .board-chip-tag{ font-weight:700; color:var(--sp-accent); }
+  .board-chip.dragging{ opacity:.45; }
+  .board-chip.drop-before{ box-shadow:-3px 0 0 var(--sp-accent); }
+  .board-chip.drop-after{ box-shadow:3px 0 0 var(--sp-accent); }
+  .board-preview-wrap{ border:1px solid var(--sp-border); border-radius:8px; background:#ffffff; padding:6px; }
+  .board-preview{ width:100%; min-height:300px; }
+  .board-foot .board-hint{ font-size:11px; color:var(--sp-text-dim); }
+  .board-dialog .textbtn.primary{ background:var(--sp-accent); color:#fff; border-color:var(--sp-accent); }
 
   /* ----- Lecteur d'animation ----- */
   .player{ background: var(--sp-plot-bg); }
@@ -508,29 +625,35 @@
 </head>
 <body class="fit">
   <div class="toolbar">
-    <span class="brand"><span class="dot"></span>Graphes</span>
+    <span class="brand"><span class="brand-icon" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M2.5 12.5h11M4 10l2.2-3 2.1 1.8L12 4"/></svg></span><span>Graphes</span></span>
     <span class="count" id="count">0 graphe</span>
-    <input class="search" id="searchInput" type="search" placeholder="Filtrer titre, tag, script, commit…" title="Filtrer par titre, tag ou provenance (script, fonction, branche/commit git)">
-    <select class="compact" id="sortSelect" title="Trier les graphes">
-      <option value="arrival">Ordre d'arrivée</option>
-      <option value="title">Titre (A→Z)</option>
-      <option value="type">Type</option>
-      <option value="script">Script</option>
-      <option value="date">Date (récent)</option>
-    </select>
+    <label class="search-wrap" title="Filtrer par titre, tag ou provenance (script, fonction, branche/commit git)">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.8 11.2a4.4 4.4 0 1 1 0-8.8 4.4 4.4 0 0 1 0 8.8ZM10.2 10.2 13.5 13.5"/></svg>
+      <input class="search" id="searchInput" type="search" placeholder="Filtrer titre, tag, script, commit...">
+    </label>
     <span class="spacer"></span>
-    <span class="compare-status" id="compareStatus">0 selectionne</span>
-    <span class="segmented">
-      <button class="compact" id="compareSide" disabled title="Afficher les graphes selectionnes cote a cote">Cote a cote</button>
-      <button class="compact" id="compareStack" disabled title="Superposer les graphes selectionnes quand leurs axes sont compatibles">Superposer</button>
+    <span class="selection-tools" id="selectionTools" hidden>
+      <span class="compare-status" id="compareStatus">0 selectionne</span>
+      <span class="segmented">
+        <button class="compact with-icon" id="compareSide" disabled title="Afficher les graphes selectionnes cote a cote"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h4v9h-4zM9.5 3.5h4v9h-4z"/></svg><span>Cote a cote</span></button>
+        <button class="compact with-icon" id="compareStack" disabled title="Superposer les graphes selectionnes quand leurs axes sont compatibles"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 10.5c2.4-4 4.6-4 7 0M6 12.5c2.4-4 4.6-4 7 0"/></svg><span>Superposer</span></button>
+        <button class="compact with-icon" id="boardBtn" disabled title="Composer une planche multi-panneaux (a)(b)(c) a partir des graphes selectionnes"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3h4v4h-4zM9.5 3h4v4h-4zM2.5 10h4v3h-4zM9.5 10h4v3h-4z"/></svg><span>Planche</span></button>
+      </span>
+      <label class="fit" title="Conserver la selection de figures quand de nouvelles figures arrivent (sinon elle se vide a chaque nouvelle figure)"><input type="checkbox" id="keepSelToggle"> Garder la selection</label>
     </span>
-    <label class="fit" title="Conserver la sélection de figures quand de nouvelles figures arrivent (sinon elle se vide à chaque nouvelle figure)"><input type="checkbox" id="keepSelToggle"> Garder la sélection</label>
-    <label class="fit" title="Adapter automatiquement chaque graphe a la largeur disponible"><input type="checkbox" id="fitToggle" checked> Ajuster à la largeur</label>
-    <button id="pasteFig" title="Coller ici la figure copiee (depuis cette fenetre ou une autre)">Coller</button>
-    <button class="primary" id="saveAll" title="Enregistrer toutes les figures de l historique">Tout enregistrer</button>
-    <button id="deleteAll" title="Supprimer toutes les figures de l historique">Tout supprimer</button>
+    <label class="fit fit-toggle" title="Adapter automatiquement chaque graphe a la largeur disponible"><input type="checkbox" id="fitToggle" checked> Ajuster a la largeur</label>
+    <button class="primary with-icon" id="saveAll" title="Enregistrer toutes les figures de l historique"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v7M5.2 7.1 8 9.9l2.8-2.8M3.5 12.5h9"/></svg><span>Tout enregistrer</span></button>
+    <details class="action-menu toolbar-tools" id="globalTools">
+      <summary class="textbtn action-menu-trigger" title="Importer, coller et actions secondaires"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M3 8h10M3 11.5h10"/></svg><span>Outils</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 6.5 8 9.5l3-3"/></svg></summary>
+      <div class="action-menu-list">
+        <button id="importCsv" title="Importer un fichier .csv/.dat comme nouveau graphe (ou glisser-deposer sur un graphe pour superposer)"><span class="menu-icon"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h5l3 3v8H4zM9 2.5v3h3M6 8h4M6 10.5h4"/></svg></span><span>Importer CSV/DAT</span></button>
+        <button id="importImage" title="Generer le code matplotlib qui reproduit la courbe, depuis une image PNG/SVG auto-portee (exportee par Chaz Plots)"><span class="menu-icon"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4h10v8H3zM5 10l2-2 1.5 1.5L10.5 7 13 10"/></svg></span><span>Image &rarr; code</span></button>
+        <button id="pasteFig" title="Coller ici la figure copiee (depuis cette fenetre ou une autre)"><span class="menu-icon"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5h4M5 5h6v8H5zM4 6.5H3v6h1"/></svg></span><span>Coller une figure</span></button>
+        <div class="menu-sep" aria-hidden="true"></div>
+        <button class="danger" id="deleteAll" title="Supprimer toutes les figures de l historique"><span class="menu-icon"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.3 4.5V3h3.4v1.5M4.6 4.5 5.3 13.3h5.4l.7-8.8M7 7v3.8M9 7v3.8"/></svg></span><span>Tout supprimer</span></button>
+      </div>
+    </details>
   </div>
-
   <div id="list"></div>
   <div class="empty" id="empty">
     <h2>Aucun graphe pour l instant</h2>
@@ -539,6 +662,8 @@
       <li>Les nouveaux graphes apparaissent dans l historique.</li>
       <li>Cochez plusieurs graphes pour les comparer cote a cote ou en superposition.</li>
       <li>Utilisez Enregistrer ou Copier directement depuis chaque carte.</li>
+      <li>Importez un fichier <code>.csv</code>/<code>.dat</code> via le bouton <strong>Importer CSV</strong> (barre d'outils = nouveau graphe ; menu d'un graphe = superposer). Le glisser-deposer marche aussi, mais maintenez <strong>Shift</strong> (sinon VS Code ouvre le fichier dans l'editeur).</li>
+      <li>Une image <code>.png</code>/<code>.svg</code> exportee par Chaz Plots est <strong>auto-portee</strong> : reconstruisez le <strong>code matplotlib</strong> qui reproduit la courbe via le bouton <strong>Image &rarr; code</strong> (ou en deposant l'image avec <strong>Shift</strong>).</li>
     </ul>
   </div>
 
@@ -585,6 +710,50 @@
     <div class="compare-body" id="compareBody"></div>
   </div>
 
+  <!-- Constructeur de planche multi-panneaux -->
+  <div class="board-overlay" id="boardOverlay">
+    <div class="board-dialog" role="dialog" aria-label="Composer une planche">
+      <div class="board-head">
+        <span class="board-title">Composer une planche</span>
+        <span class="spacer"></span>
+        <button class="textbtn" id="boardClose">Fermer ✕</button>
+      </div>
+      <div class="board-body">
+        <div class="board-controls">
+          <label>Titre <input type="text" id="boardTitleInput" placeholder="Planche"></label>
+          <label>Lignes <input type="number" id="boardRows" min="1" max="9" step="1" value="1"></label>
+          <label>Colonnes <input type="number" id="boardCols" min="1" max="9" step="1" value="2"></label>
+          <label>Largeur cible
+            <select id="boardWidth">
+              <option value="3.4">Une colonne (~3,4 po)</option>
+              <option value="7">Deux colonnes / pleine largeur (~7 po)</option>
+            </select>
+          </label>
+          <label>Legende
+            <select id="boardLegend">
+              <option value="bottom">En bas (partagee)</option>
+              <option value="right">A droite (partagee)</option>
+              <option value="none">Aucune</option>
+            </select>
+          </label>
+        </div>
+        <div class="board-order-wrap">
+          <div class="board-order-label">Ordre des panneaux (glisser pour reordonner) :</div>
+          <div class="board-order" id="boardOrder"></div>
+        </div>
+        <div class="board-preview-wrap">
+          <div class="board-preview" id="boardPreview"></div>
+        </div>
+      </div>
+      <div class="board-foot">
+        <span class="board-hint" id="boardHint"></span>
+        <span class="spacer"></span>
+        <button class="textbtn" id="boardCancel">Annuler</button>
+        <button class="textbtn primary" id="boardCompose">Composer</button>
+      </div>
+    </div>
+  </div>
+
 
   <!-- Style publication -->
   <div class="publication-editor" id="publicationEditor" role="dialog" aria-label="Style publication">
@@ -596,9 +765,25 @@
     </select></label>
     <span class="pub-actions">
       <button class="compact primary" id="pubApply">Appliquer</button>
+      <button class="compact" id="pubCreateBtn">Creer…</button>
       <button class="compact" id="pubClose">Fermer</button>
     </span>
     <span class="pub-hint">Le preset est previsualise immediatement.</span>
+    <div class="pub-create" id="pubCreate">
+      <label>Nom <input id="pubCreateName" type="text" placeholder="Mon preset" maxlength="40"></label>
+      <label>Titre <input id="pubCreateTitle" type="number" min="6" max="60" step="1" value="20"></label>
+      <label>Labels axes <input id="pubCreateAxis" type="number" min="6" max="60" step="1" value="16"></label>
+      <label>Legende <input id="pubCreateLegend" type="number" min="6" max="60" step="1" value="12"></label>
+      <label>Ticks <input id="pubCreateTick" type="number" min="4" max="40" step="1" value="12"></label>
+      <label>Epaisseur <input id="pubCreateLine" type="number" min="0.2" max="20" step="0.2" value="2"></label>
+      <label>Grille <select id="pubCreateGrid">
+        <option value="none">Aucune</option>
+        <option value="light">Legere</option>
+        <option value="full">Complete</option>
+      </select></label>
+      <button class="compact primary" id="pubCreateSave">Enregistrer</button>
+      <button class="compact" id="pubCreateCancel">Annuler</button>
+    </div>
   </div>
 
   <div class="inset-connector-editor" id="insetConnectorEditor" role="dialog" aria-label="Reglages de l'encart">
@@ -667,7 +852,9 @@
     <label class="le-trace-field le-guide-field"><span id="leGuideEndLabel">Fin</span><input id="leGuideEnd" type="number" step="any" value="1"></label>
     <label class="le-trace-field le-marker-field">Marqueur <select id="leSymbol"></select></label>
     <label class="le-trace-field le-marker-field">Taille <input id="leMarkerSize" type="number" min="1" max="40" step="1" value="6"></label>
+    <label class="le-legend-field">Taille legende <input id="leLegendSize" type="number" min="6" max="48" step="1" value="12"></label>
     <button class="compact primary" id="leApply">Appliquer</button>
+    <button class="compact le-guideshape-field" id="leDeleteGuide">Supprimer</button>
     <button class="compact" id="leClose">Fermer</button>
   </div>
 
@@ -719,8 +906,10 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
   const count = document.getElementById("count");
   const searchInput = document.getElementById("searchInput");
   const compareStatus = document.getElementById("compareStatus");
+  const selectionTools = document.getElementById("selectionTools");
   const compareSide = document.getElementById("compareSide");
   const compareStack = document.getElementById("compareStack");
+  const boardBtn = document.getElementById("boardBtn");
   const compareOverlay = document.getElementById("compareOverlay");
   const compareBody = document.getElementById("compareBody");
   const compareTitle = document.getElementById("compareTitle");
@@ -863,7 +1052,8 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     if (fig.plotly && typeof Plotly !== "undefined"){
       const el = document.getElementById("plot-" + fig.id);
       if (el){
-        return Plotly.toImage(el, { format: "png", scale: 2 })
+        const d = exportDims(el);   // ratio naturel matplotlib
+        return withExportLegend(el, function(){ return Plotly.toImage(el, { format: "png", width: d.width, height: d.height, scale: 2 }); })
           .then(function(url){ return dataUrlToBlob(url); });
       }
     }
@@ -894,10 +1084,16 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
 
   function updateCompareToolbar(){
     const total = selectedForCompare.length;
+    const hasSelection = total > 0;
+    if (selectionTools){
+      selectionTools.hidden = !hasSelection;
+      selectionTools.classList.toggle("show", hasSelection);
+    }
     compareStatus.textContent = total + (total > 1 ? " selectionnes" : " selectionne");
     const ready = total >= 2;
     compareSide.disabled = !ready;
     compareStack.disabled = !ready;
+    if (boardBtn){ boardBtn.disabled = !ready; }
   }
 
   function setCompareSelection(id, checked){
@@ -1441,6 +1637,7 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
   // ----------------------------------------------------------
   const INSET_MIN_SIZE = 0.12;
   const INSET_CORNERS = ["nw", "ne", "sw", "se"];
+  let hoveredInsetEl = null;   // encart-loupe actuellement survole (cible de Ctrl/Cmd+C)
   // Couleur par defaut de l'encart (bleu accent VS Code = rgb(55,148,255)).
   const INSET_DEFAULT_COLOR = "#3794ff";
   // Etat par defaut de l'encart : couleur, 2 coins relies, opacite 0.5 par coin,
@@ -1457,6 +1654,9 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     if (getComputedStyle(wrap).position === "static"){ wrap.style.position = "relative"; }
     const overlay = document.createElement("div");
     overlay.className = "inset-overlay";
+    // Survol de l'encart -> cible du raccourci Ctrl/Cmd+C (copier l'encart).
+    overlay.addEventListener("mouseenter", function(){ hoveredInsetEl = el; });
+    overlay.addEventListener("mouseleave", function(){ if (hoveredInsetEl === el){ hoveredInsetEl = null; } });
     overlay.addEventListener("pointerdown", function(ev){
       if (ev.target !== overlay){ return; }      // une poignee gere son resize
       // Ctrl/Cmd+clic = ouvrir l'editeur des traits de liaison (pas de drag).
@@ -1501,6 +1701,7 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
   }
 
   function unmountInsetOverlay(el){
+    if (hoveredInsetEl === el){ hoveredInsetEl = null; }
     const overlay = el._spInsetOverlay;
     if (overlay && overlay.parentElement){ overlay.parentElement.removeChild(overlay); }
     el._spInsetOverlay = null;
@@ -1754,6 +1955,7 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     mountInsetOverlay(el);
     mountInsetSourceOverlay(el);
     requestAnimationFrame(function(){ positionInsetOverlay(el); });
+    scheduleUndoRecord(el);   // ajout / deplacement / resize / connecteur d'encart
   }
 
   function clearZoomInset(el){
@@ -1766,6 +1968,279 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     unmountInsetOverlay(el);
     unmountInsetSourceOverlay(el);
     Plotly.react(el, clone(el._spBaseData || []), baseLayoutForPlot(el), el._spConfig || plotlyConfig(el._spFig || {}));
+    scheduleUndoRecord(el);   // suppression d'encart
+  }
+
+  // ============================================================
+  // Vignettes : encart COPIE d'un autre graphe (mini-figure autonome).
+  //
+  // Contrairement a l'encart-loupe (zoom de la meme donnee, ephemere), une
+  // vignette est BAKEE dans la figure : ses axes + traces + bordure vivent dans
+  // el._spBaseData / el._spBaseLayout (donc fig.plotly) -> elle PERSISTE, s'exporte,
+  // et coexiste avec la loupe (qui re-react depuis la base, donc preserve la
+  // vignette). Un registre leger el._spVignettes / fig.plotly.vignettes liste
+  // { id, xaxisKey, yaxisKey, placement, color, ... } pour gerer overlay/move/delete.
+  // Pas de traits de liaison (axes differents du graphe hote).
+  // ============================================================
+  let vignetteClipboard = null;   // {traces, xRange, yRange, xType, yType, xTitle, yTitle, color, nticks}
+  let vignetteSeq = 1;
+
+  function axisTitlePlain(axis){
+    if (!axis || !axis.title){ return ""; }
+    if (typeof LegendEdit !== "undefined"){ return LegendEdit.latexToPlainText(LegendEdit.titleText(axis.title)); }
+    return (typeof axis.title === "object") ? (axis.title.text || "") : String(axis.title || "");
+  }
+
+  // Copie l'encart-loupe courant dans le presse-papier de vignette.
+  function copyInsetAsVignette(el){
+    if (!el || !el._spInsetSelection){
+      vscodeApi.postMessage({ type: "notify", level: "warn", text: "Chaz Plots : cree d'abord un encart (loupe) a copier." });
+      return;
+    }
+    const sel = el._spInsetSelection;
+    const baseLayout = el._spBaseLayout || {};
+    const xAxis = baseLayout[sel.xaxisKey] || {};
+    const yAxis = baseLayout[sel.yaxisKey] || {};
+    const conn = el._spInsetConnector || defaultInsetConnector();
+    const traces = matchingAxisTraces(el._spBaseData || [], sel.xRef, sel.yRef).map(function(t){ return clone(t); });
+    if (!traces.length){
+      vscodeApi.postMessage({ type: "notify", level: "warn", text: "Chaz Plots : aucune courbe dans l'encart a copier." });
+      return;
+    }
+    vignetteClipboard = {
+      traces: traces,
+      xRange: sel.xRange.slice(), yRange: sel.yRange.slice(),
+      xType: xAxis.type || null, yType: yAxis.type || null,
+      xTitle: axisTitlePlain(xAxis), yTitle: axisTitlePlain(yAxis),
+      color: conn.color || INSET_DEFAULT_COLOR,
+      nticks: (conn.nticks && conn.nticks > 0) ? conn.nticks : 6
+    };
+    vscodeApi.postMessage({ type: "notify", level: "info", text: "Chaz Plots : encart copie. Sur un autre graphe : Outils > « Coller un encart »." });
+  }
+
+  // Place la vignette dans un coin libre (reutilise les candidats de l'encart),
+  // en evitant de recouvrir une vignette existante.
+  function chooseVignettePlacement(el){
+    const baseLayout = el._spBaseLayout || {};
+    const xAxis = baseLayout.xaxis || {};
+    const yAxis = baseLayout.yaxis || {};
+    const xDomain = Array.isArray(xAxis.domain) ? xAxis.domain : [0.08, 0.96];
+    const yDomain = Array.isArray(yAxis.domain) ? yAxis.domain : [0.12, 0.94];
+    const cands = InsetLayout.makeInsetCandidates(xDomain, yDomain);
+    const used = (el._spVignettes || []).map(function(v){ return v.placement; });
+    for (let i = 0; i < cands.length; i++){
+      const c = cands[i];
+      const overlaps = used.some(function(p){
+        return !(c.xDomain[1] < p.xDomain[0] || c.xDomain[0] > p.xDomain[1] ||
+                 c.yDomain[1] < p.yDomain[0] || c.yDomain[0] > p.yDomain[1]);
+      });
+      if (!overlaps){ return { xDomain: c.xDomain.slice(), yDomain: c.yDomain.slice() }; }
+    }
+    return cands.length ? { xDomain: cands[0].xDomain.slice(), yDomain: cands[0].yDomain.slice() }
+                        : { xDomain: [0.62, 0.96], yDomain: [0.60, 0.94] };
+  }
+
+  // Bake (ou re-bake) les axes + bordure d'une vignette dans el._spBaseLayout
+  // depuis son registre. Les TRACES sont bakees une seule fois (au collage).
+  function bakeVignetteAxes(el, v){
+    const baseLayout = el._spBaseLayout;
+    const xRef = axisRefFromKey(v.xaxisKey);
+    const yRef = axisRefFromKey(v.yaxisKey);
+    const xax = insetAxis(v.xType ? { type: v.xType } : {}, v.placement.xDomain, yRef, v.xRange, v.nticks);
+    xax.title = { text: v.xTitle || "", font: { size: 9 } };
+    if (v.xType){ xax.type = v.xType; }
+    const yax = insetAxis(v.yType ? { type: v.yType } : {}, v.placement.yDomain, xRef, v.yRange, v.nticks);
+    yax.title = { text: v.yTitle || "", font: { size: 9 } };
+    if (v.yType){ yax.type = v.yType; }
+    baseLayout[v.xaxisKey] = xax;
+    baseLayout[v.yaxisKey] = yax;
+    baseLayout.shapes = Array.isArray(baseLayout.shapes) ? baseLayout.shapes : [];
+    let border = null;
+    for (let i = 0; i < baseLayout.shapes.length; i++){
+      if (baseLayout.shapes[i] && baseLayout.shapes[i]._spVignetteBorder === v.id){ border = baseLayout.shapes[i]; break; }
+    }
+    if (!border){
+      border = { type: "rect", xref: "paper", yref: "paper", fillcolor: "rgba(255,255,255,0)",
+        line: { color: v.color || INSET_DEFAULT_COLOR, width: 2 }, editable: false, _spVignetteBorder: v.id };
+      baseLayout.shapes.push(border);
+    }
+    border.x0 = v.placement.xDomain[0]; border.x1 = v.placement.xDomain[1];
+    border.y0 = v.placement.yDomain[0]; border.y1 = v.placement.yDomain[1];
+    border.line = { color: v.color || INSET_DEFAULT_COLOR, width: 2 };
+  }
+
+  // Re-rend la figure (base + loupe si active) sans toucher au registre vignettes.
+  function redrawFigureBase(el){
+    if (el._spHasInset && el._spInsetSelection){
+      applyZoomInset(el, el._spInsetSelection, el._spInsetPlacement);
+    } else {
+      Plotly.react(el, clone(el._spBaseData || []), baseLayoutForPlot(el), el._spConfig || plotlyConfig(el._spFig || {}));
+    }
+  }
+
+  // Persiste data+layout+registre vignettes de la figure (figStore + extension).
+  function syncVignettesToFig(el){
+    const m = /^plot-(\d+)$/.exec(el.id || "");
+    if (!m){ return; }
+    const id = parseInt(m[1], 10);
+    const fig = figStore[id];
+    if (!fig || !fig.plotly){ return; }
+    fig.plotly.data = clone(el._spBaseData || []);
+    fig.plotly.layout = clone(el._spBaseLayout || {});
+    fig.plotly.vignettes = clone(el._spVignettes || []);
+    fig.edited = true;
+    vscodeApi.postMessage({ type: "replaceFigurePlotly", id: id,
+      plotly: { data: fig.plotly.data, layout: fig.plotly.layout, vignettes: fig.plotly.vignettes } });
+  }
+
+  // Colle la vignette du presse-papier sur le graphe `el`.
+  function pasteVignette(el){
+    if (!el){ return; }
+    if (!vignetteClipboard){
+      vscodeApi.postMessage({ type: "notify", level: "warn", text: "Chaz Plots : aucun encart copie." });
+      return;
+    }
+    if (!el._spBaseLayout){ el._spBaseLayout = {}; }
+    if (!el._spBaseData){ el._spBaseData = []; }
+    if (!el._spVignettes){ el._spVignettes = []; }
+    const clip = vignetteClipboard;
+    const idx = nextAxisIndex(el._spBaseLayout);
+    const v = {
+      id: "vig" + (vignetteSeq++) + "_" + Date.now().toString(36),
+      xaxisKey: "xaxis" + idx, yaxisKey: "yaxis" + idx,
+      placement: chooseVignettePlacement(el),
+      color: clip.color, nticks: clip.nticks,
+      xRange: clip.xRange.slice(), yRange: clip.yRange.slice(),
+      xType: clip.xType, yType: clip.yType,
+      xTitle: clip.xTitle, yTitle: clip.yTitle
+    };
+    el._spVignettes.push(v);
+    bakeVignetteAxes(el, v);
+    // traces (bakees une fois) sur les axes de la vignette
+    const xRef = axisRefFromKey(v.xaxisKey), yRef = axisRefFromKey(v.yaxisKey);
+    clip.traces.forEach(function(t){
+      const tt = clone(t); tt.xaxis = xRef; tt.yaxis = yRef; tt.showlegend = false;
+      tt.legendgroup = undefined; tt._spVignette = v.id;
+      el._spBaseData.push(tt);
+    });
+    syncVignettesToFig(el);
+    redrawFigureBase(el);
+    mountVignetteOverlays(el);
+    requestAnimationFrame(function(){ positionVignetteOverlays(el); });
+    scheduleUndoRecord(el);
+    vscodeApi.postMessage({ type: "notify", level: "info", text: "Chaz Plots : vignette collee (glisser = deplacer, coins = redimensionner, clic droit = effacer)." });
+  }
+
+  function vignetteById(el, id){ return (el._spVignettes || []).filter(function(v){ return v.id === id; })[0]; }
+
+  function deleteVignette(el, id){
+    const v = vignetteById(el, id);
+    if (!v){ return; }
+    const xRef = axisRefFromKey(v.xaxisKey);
+    el._spBaseData = (el._spBaseData || []).filter(function(t){ return t._spVignette !== id && t.xaxis !== xRef; });
+    if (el._spBaseLayout){
+      delete el._spBaseLayout[v.xaxisKey];
+      delete el._spBaseLayout[v.yaxisKey];
+      if (Array.isArray(el._spBaseLayout.shapes)){
+        el._spBaseLayout.shapes = el._spBaseLayout.shapes.filter(function(s){ return s._spVignetteBorder !== id; });
+      }
+    }
+    el._spVignettes = (el._spVignettes || []).filter(function(x){ return x.id !== id; });
+    const ov = el._spVignetteOverlays && el._spVignetteOverlays[id];
+    if (ov && ov.parentElement){ ov.parentElement.removeChild(ov); }
+    if (el._spVignetteOverlays){ delete el._spVignetteOverlays[id]; }
+    syncVignettesToFig(el);
+    redrawFigureBase(el);
+    requestAnimationFrame(function(){ positionVignetteOverlays(el); });
+    scheduleUndoRecord(el);
+  }
+
+  // Overlays HTML draggables, un par vignette (reutilise .inset-overlay/.inset-handle).
+  function mountVignetteOverlays(el){
+    const wrap = el.parentElement;
+    if (!wrap){ return; }
+    if (getComputedStyle(wrap).position === "static"){ wrap.style.position = "relative"; }
+    if (!el._spVignetteOverlays){ el._spVignetteOverlays = {}; }
+    const store = el._spVignetteOverlays;
+    const alive = {};
+    (el._spVignettes || []).forEach(function(v){
+      alive[v.id] = true;
+      if (store[v.id]){ return; }
+      const overlay = document.createElement("div");
+      overlay.className = "inset-overlay vignette-overlay";
+      overlay.title = "Vignette : glisser = deplacer, coins = redimensionner, clic droit = effacer";
+      overlay.addEventListener("pointerdown", function(ev){
+        if (ev.target !== overlay){ return; }
+        startVignetteDrag(el, v.id, ev, InsetLayout.movePlacement);
+      });
+      overlay.addEventListener("contextmenu", function(ev){ ev.preventDefault(); deleteVignette(el, v.id); });
+      INSET_CORNERS.forEach(function(corner){
+        const h = document.createElement("div");
+        h.className = "inset-handle inset-handle-" + corner;
+        h.addEventListener("pointerdown", function(ev){
+          startVignetteDrag(el, v.id, ev, function(p, dx, dy){ return InsetLayout.resizePlacement(p, corner, dx, dy, INSET_MIN_SIZE); });
+        });
+        overlay.appendChild(h);
+      });
+      wrap.appendChild(overlay);
+      store[v.id] = overlay;
+    });
+    Object.keys(store).forEach(function(vid){
+      if (!alive[vid]){ if (store[vid] && store[vid].parentElement){ store[vid].parentElement.removeChild(store[vid]); } delete store[vid]; }
+    });
+  }
+
+  function positionVignetteOverlays(el){
+    const store = el._spVignetteOverlays;
+    const size = el._fullLayout && el._fullLayout._size;
+    if (!store || !size){ return; }
+    (el._spVignettes || []).forEach(function(v){
+      const overlay = store[v.id];
+      if (!overlay){ return; }
+      const box = InsetLayout.paperRectToPixels(v.placement, size);
+      overlay.style.left = (el.offsetLeft + box.left) + "px";
+      overlay.style.top = (el.offsetTop + box.top) + "px";
+      overlay.style.width = box.width + "px";
+      overlay.style.height = box.height + "px";
+    });
+  }
+
+  function startVignetteDrag(el, id, ev, transform){
+    const v = vignetteById(el, id);
+    const size = el._fullLayout && el._fullLayout._size;
+    if (!v || !size){ return; }
+    ev.preventDefault(); ev.stopPropagation();
+    const target = ev.currentTarget;
+    try { target.setPointerCapture(ev.pointerId); } catch (e) {}
+    const startX = ev.clientX, startY = ev.clientY;
+    const startPlacement = { xDomain: v.placement.xDomain.slice(), yDomain: v.placement.yDomain.slice() };
+    let raf = null, pending = null;
+    function onMove(e){
+      pending = e;
+      if (raf){ return; }
+      raf = requestAnimationFrame(function(){
+        raf = null;
+        const d = InsetLayout.pixelDeltaToPaper(pending.clientX - startX, pending.clientY - startY, size);
+        const next = transform(startPlacement, d.dx, d.dy);
+        const p = InsetLayout.clampPlacement(
+          { x0: next.xDomain[0], x1: next.xDomain[1], y0: next.yDomain[0], y1: next.yDomain[1] },
+          [0.02, 0.98], [0.02, 0.98], INSET_MIN_SIZE);
+        v.placement = { xDomain: p.xDomain.slice(), yDomain: p.yDomain.slice() };
+        bakeVignetteAxes(el, v);
+        redrawFigureBase(el);
+        positionVignetteOverlays(el);
+      });
+    }
+    function onUp(e){
+      target.removeEventListener("pointermove", onMove);
+      target.removeEventListener("pointerup", onUp);
+      try { target.releasePointerCapture(e.pointerId); } catch (err) {}
+      if (raf){ cancelAnimationFrame(raf); raf = null; }
+      syncVignettesToFig(el);   // persiste la position finale
+      scheduleUndoRecord(el);
+    }
+    target.addEventListener("pointermove", onMove);
+    target.addEventListener("pointerup", onUp);
   }
 
 
@@ -1982,29 +2457,52 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     const base = BundleMeta.sanitizeBase(fig.title, fig.id);
     const files = [];
     const formats = [];
+    // Comparaison cote a cote : plusieurs panneaux independants. Un seul
+    // Plotly.toImage(el) ne capturerait que le panneau de gauche -> on assemble
+    // l'image composite de tous les panneaux (comme l'export "Enregistrer").
+    const isCompareGrid = fig.id === "compare" && !!compareBody.querySelector(".compare-grid");
     try {
-      if (fig.plotly && el){
-        const png = await Plotly.toImage(el, { format: "png", scale: 2 });
+      if (isCompareGrid){
+        const canvas = await exportCompareSideCanvas({ scale: 2 });
+        const png = canvas.toDataURL("image/png");
         files.push({ name: "figure.png", dataUrl: png }); formats.push("png");
-        const svg = await Plotly.toImage(el, { format: "svg" });
+        // Pas de composite vectoriel : PNG emballe dans un SVG valide.
+        const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + canvas.width +
+          '" height="' + canvas.height + '" viewBox="0 0 ' + canvas.width + ' ' + canvas.height +
+          '"><image width="' + canvas.width + '" height="' + canvas.height + '" href="' + png + '"/></svg>';
+        files.push({ name: "figure.svg", dataUrl: "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svg))) });
+        formats.push("svg");
+        try {
+          const pdfUrl = await canvasToRasterPdfDataUrl(canvas);
+          files.push({ name: "figure.pdf", dataUrl: pdfUrl }); formats.push("pdf");
+        } catch (e) { /* PDF best-effort */ }
+      } else if (fig.plotly && el){
+        // withExportLegend : ne pas embarquer les courbes desactivees au clic.
+        // exportDims : ratio naturel matplotlib (pas la taille etiree a l'ecran).
+        const d = exportDims(el);
+        const png = await withExportLegend(el, function(){ return Plotly.toImage(el, { format: "png", width: d.width, height: d.height, scale: 2 }); });
+        files.push({ name: "figure.png", dataUrl: png }); formats.push("png");
+        const svg = await withExportLegend(el, function(){ return Plotly.toImage(el, { format: "svg", width: d.width, height: d.height }); });
         files.push({ name: "figure.svg", dataUrl: svg }); formats.push("svg");
       } else {
         if (fig.png){ files.push({ name: "figure.png", dataUrl: "data:image/png;base64," + fig.png }); formats.push("png"); }
         if (fig.svg){ files.push({ name: "figure.svg", dataUrl: "data:image/svg+xml;base64," + fig.svg }); formats.push("svg"); }
       }
-      // PDF : natif matplotlib si disponible (figure simple NON editee), sinon
-      // raster depuis l'element vivant (comparaison / encart / erreurs / figure
-      // editee dont le PDF natif est perime, comme la sauvegarde unitaire).
-      // On detecte les ajouts (annotations/encart) directement sur l'element
-      // vivant : c'est le rendu reellement affiche qui doit partir dans le PDF,
-      // sans dependre de la propagation du flag fig.edited.
+      // PDF : natif matplotlib si disponible (figure simple NON editee, sans
+      // courbe masquee), sinon raster depuis l'element vivant (comparaison /
+      // encart / erreurs / figure editee dont le PDF natif est perime). On
+      // detecte les ajouts (annotations/encart) directement sur l'element vivant :
+      // c'est le rendu reellement affiche qui doit partir dans le PDF.
       const liveLayout = (el && el.layout) || {};
       const liveExtras = (Array.isArray(liveLayout.annotations) && liveLayout.annotations.length > 0) || !!(el && el._spHasInset);
-      if (fig.pdf && fig.pdf !== "__webview__" && !fig.edited && !liveExtras){
+      const liveHidden = ((el && el.data) || []).some(function(t){ return t.visible === "legendonly"; });
+      if (isCompareGrid){
+        // PDF deja ajoute ci-dessus (composite).
+      } else if (fig.pdf && fig.pdf !== "__webview__" && !fig.edited && !liveExtras && !liveHidden){
         files.push({ name: "figure.pdf", dataUrl: "data:application/pdf;base64," + fig.pdf }); formats.push("pdf");
       } else if (fig.plotly && el){
         try {
-          const pdfUrl = await buildRasterPdfDataUrl(el);
+          const pdfUrl = await withExportLegend(el, function(){ return buildRasterPdfDataUrl(el); });
           files.push({ name: "figure.pdf", dataUrl: pdfUrl }); formats.push("pdf");
         } catch (e) { /* PDF best-effort : on continue sans */ }
       }
@@ -2299,6 +2797,21 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     try { Plotly.restyle(t.el, plotlyRestylePatch(patch), [t.idx]); } catch (e) {}
   }
 
+  // Apercu live de la taille de legende (relayout sans persister).
+  function livePreviewLegendSize(){
+    const t = legendEditTarget;
+    if (t.mode !== "legend" || !t.el){ return; }
+    const size = Number(document.getElementById("leLegendSize").value);
+    if (!isFinite(size) || size <= 0){ return; }
+    try { Plotly.relayout(t.el, { "legend.font.size": size }); } catch (e) {}
+  }
+
+  function restoreLegendSizePreview(){
+    const t = legendEditTarget;
+    if (t.mode !== "legend" || t.applied || !t.el || !isFinite(t.originalLegendSize)){ return; }
+    try { Plotly.relayout(t.el, { "legend.font.size": t.originalLegendSize }); } catch (e) {}
+  }
+
   function renderPicker(){
     if (typeof LegendEdit === "undefined"){ return; }
     const sv = document.getElementById("leSvSquare");
@@ -2399,11 +2912,14 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
         input.addEventListener("input", function(){ livePreviewLegendTrace(); });
       }
     });
+    const leLegendSizeInput = document.getElementById("leLegendSize");
+    if (leLegendSizeInput){ leLegendSizeInput.addEventListener("input", livePreviewLegendSize); }
   })();
 
   function closeLegendEditor(){
     restoreLegendTracePreview();
     restoreGuideShapePreview();
+    restoreLegendSizePreview();
     const box = document.getElementById("legendEditor");
     if (box){ box.style.display = "none"; }
     legendEditTarget = { mode: "trace", el: null, idx: -1, shapeIndex: -1, textKey: "", fontSizeKey: "", originalTrace: null, originalShape: null, applied: false };
@@ -2476,6 +2992,22 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     showLegendEditor("text");
   }
 
+  // Edition de la taille generale de la legende : ouvert par un clic sur la
+  // BOITE de legende (fond/cadre, pas une entree) en mode edition. Pilote
+  // legend.font.size ; la boite grossit/retrecit avec le texte.
+  function openLegendBoxEditor(el){
+    if (!el || typeof LegendEdit === "undefined"){ return; }
+    closeAnnotationEditor();
+    closePublicationEditor();
+    legendEditTarget = { mode: "legend", el: el, idx: -1, shapeIndex: -1, textKey: "", fontSizeKey: "", originalTrace: null, originalShape: null, applied: false };
+    const layout = el._spBaseLayout || el.layout || {};
+    const size = (layout.legend && layout.legend.font && layout.legend.font.size)
+      || (layout.font && layout.font.size) || 12;
+    legendEditTarget.originalLegendSize = size;   // pour restaurer si fermeture sans Appliquer
+    document.getElementById("leLegendSize").value = String(size);
+    showLegendEditor("legend");
+  }
+
   function setLegendEditFeedback(el, coordsEl){
     if (el.parentElement){ el.parentElement.classList.toggle("sp-legend-armed", !!el._spLegendEditArmed); }
     if (coordsEl){ coordsEl.textContent = el._spLegendEditArmed ? "Mode edition : cliquez une entree de legende, un titre ou un axe ; glissez un label d'axe pour le deplacer" : ""; }
@@ -2483,6 +3015,8 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
 
   function persistLegendPatch(el, idx, patch){
     if (el._spBaseData && el._spBaseData[idx]){ LegendEdit.applyPatch(el._spBaseData[idx], patch); }
+    scheduleUndoRecord(el);   // edition de trace / legende
+
     const tr = el.data && el.data[idx];
     // Vue comparaison/erreur : la trace porte sa figure + index source. On
     // ecrit l'edition dans la figure source (sauf le nom : il est prefixe par
@@ -2522,6 +3056,7 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
   function persistLayoutPatch(el, patch){
     if (!patch || !Object.keys(patch).length || typeof LegendEdit === "undefined"){ return; }
     if (el._spBaseLayout){ LegendEdit.applyPatch(el._spBaseLayout, patch); }
+    scheduleUndoRecord(el);   // titres, labels, guides, annotations, taille legende
     const m = /^plot-(\d+)$/.exec(el.id || "");
     if (!m){ return; }
     const id = parseInt(m[1], 10);
@@ -2627,7 +3162,26 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     if (box){ box.dataset.preset = selectedPublicationPreset(); }
   }
 
+  // Style en cours de saisie dans le formulaire de creation (merge avec
+  // 'article' pour les champs non exposes : palette, fond...).
+  function creatorStyleFromForm(){
+    const num = function(id, dflt){ const v = Number(document.getElementById(id).value); return (isFinite(v) && v > 0) ? v : dflt; };
+    return {
+      title: num("pubCreateTitle", 20),
+      axis: num("pubCreateAxis", 16),
+      legend: num("pubCreateLegend", 12),
+      tick: num("pubCreateTick", 12),
+      line: num("pubCreateLine", 2),
+      grid: document.getElementById("pubCreateGrid").value || "light"
+    };
+  }
+
   function readPublicationValues(){
+    // En cours de creation : previsualiser les valeurs du formulaire en direct.
+    const box = document.getElementById("publicationEditor");
+    if (box && box.dataset.creating === "true"){
+      return Object.assign({}, PUBLICATION_PRESETS.article, sanitizePublicationStyle(creatorStyleFromForm()));
+    }
     const preset = selectedPublicationPreset();
     if (preset.indexOf("custom:") === 0){
       const name = preset.slice("custom:".length);
@@ -2677,6 +3231,7 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     const preset = document.getElementById("pubPreset");
     if (preset){ preset.value = "article"; }
     updatePublicationModeVisibility();
+    setPresetCreating(false);
     document.getElementById("publicationEditor").style.display = "flex";
     previewPublicationStyle();
   }
@@ -2861,6 +3416,44 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
       .finally(function(){ closePublicationEditor(true); });
   }
 
+  // --- Creation d'un preset personnalise ---------------------------------
+  function setPresetCreating(on){
+    const box = document.getElementById("publicationEditor");
+    if (box){ box.dataset.creating = on ? "true" : "false"; }
+  }
+
+  // Ouvre le formulaire, pre-rempli depuis le preset actuellement selectionne.
+  function openPresetCreator(){
+    const vals = readPublicationValues();
+    document.getElementById("pubCreateName").value = "";
+    document.getElementById("pubCreateTitle").value = String(vals.title || 20);
+    document.getElementById("pubCreateAxis").value = String(vals.axis || 16);
+    document.getElementById("pubCreateLegend").value = String(vals.legend || 12);
+    document.getElementById("pubCreateTick").value = String(vals.tick || 12);
+    document.getElementById("pubCreateLine").value = String(vals.line || 2);
+    document.getElementById("pubCreateGrid").value = vals.grid || "light";
+    setPresetCreating(true);
+    previewPublicationStyle();   // apercu live des valeurs pre-remplies
+    document.getElementById("pubCreateName").focus();
+  }
+
+  function savePresetCreator(){
+    const name = (document.getElementById("pubCreateName").value || "").trim();
+    if (!name){
+      vscodeApi.postMessage({ type: "notify", level: "warn", text: "Chaz Plots : donnez un nom au preset." });
+      return;
+    }
+    const style = creatorStyleFromForm();
+    CUSTOM_PUBLICATION_PRESETS[name] = style;   // dispo immediatement (sans reload)
+    registerCustomPublicationPresets();
+    const select = document.getElementById("pubPreset");
+    if (select){ select.value = "custom:" + name; }
+    updatePublicationModeVisibility();
+    vscodeApi.postMessage({ type: "saveCustomPreset", name: name, style: style });   // persiste dans la config
+    setPresetCreating(false);
+    previewPublicationStyle();
+  }
+
   (function initPublicationEditor(){
     const preset = document.getElementById("pubPreset");
     if (preset){ preset.addEventListener("change", function(){ updatePublicationModeVisibility(); previewPublicationStyle(); }); }
@@ -2868,6 +3461,22 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     if (apply){ apply.addEventListener("click", commitPublicationStyle); }
     const close = document.getElementById("pubClose");
     if (close){ close.addEventListener("click", function(){ closePublicationEditor(false); }); }
+    const createBtn = document.getElementById("pubCreateBtn");
+    if (createBtn){ createBtn.addEventListener("click", openPresetCreator); }
+    const createSave = document.getElementById("pubCreateSave");
+    if (createSave){ createSave.addEventListener("click", savePresetCreator); }
+    const createCancel = document.getElementById("pubCreateCancel");
+    if (createCancel){ createCancel.addEventListener("click", function(){ setPresetCreating(false); previewPublicationStyle(); }); }
+    // Apercu live pendant la saisie du formulaire de creation.
+    const creatorPreview = function(){
+      if (document.getElementById("publicationEditor").dataset.creating === "true"){ previewPublicationStyle(); }
+    };
+    ["pubCreateTitle", "pubCreateAxis", "pubCreateLegend", "pubCreateTick", "pubCreateLine"].forEach(function(id){
+      const inp = document.getElementById(id);
+      if (inp){ inp.addEventListener("input", creatorPreview); }
+    });
+    const gridSel = document.getElementById("pubCreateGrid");
+    if (gridSel){ gridSel.addEventListener("change", creatorPreview); }
   })();
 
   (function initInsetConnectorEditor(){
@@ -2913,11 +3522,33 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
   })();
 
   document.getElementById("leClose").addEventListener("click", closeLegendEditor);
+  // Supprimer une hline/vline (guide ajoute dans le webview = une shape).
+  document.getElementById("leDeleteGuide").addEventListener("click", function(){
+    const el = legendEditTarget.el;
+    if (!el || legendEditTarget.mode !== "guideShape"){ return; }
+    const idx = legendEditTarget.shapeIndex;
+    legendEditTarget.applied = true;   // ne pas restaurer l'apercu de la shape supprimee
+    const shapes = guideShapesArray(el);
+    if (idx >= 0 && idx < shapes.length){
+      shapes.splice(idx, 1);
+      const patch = { shapes: shapes };
+      try { Plotly.relayout(el, patch); } catch (e) {}
+      persistLayoutPatch(el, patch);
+    }
+    closeLegendEditor();
+  });
   document.getElementById("leApply").addEventListener("click", function(){
     const el = legendEditTarget.el;
     if (!el || typeof LegendEdit === "undefined"){ return; }
     if (legendEditTarget.mode === "text"){
       applyLegendLayoutPatch(el, buildTextLayoutPatch());
+      closeLegendEditor();
+      return;
+    }
+    if (legendEditTarget.mode === "legend"){
+      const size = Number(document.getElementById("leLegendSize").value);
+      legendEditTarget.applied = true;   // ne pas restaurer l'apercu a la fermeture
+      if (isFinite(size) && size > 0){ applyLegendLayoutPatch(el, { "legend.font.size": size }); }
       closeLegendEditor();
       return;
     }
@@ -3505,6 +4136,23 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     const wIn = fig.plotly && fig.plotly.width_in;
     return Math.round((wIn || 7) * 120);
   }
+  // Dimensions d'export (px CSS @96dpi) au RATIO NATUREL de la figure
+  // (width_in x height_in), pas la taille etiree a l'ecran. Multipliees ensuite
+  // par `scale` (= dpi/96) -> width_in x dpi px, comme matplotlib/Spyder. Repli
+  // sur la taille a l'ecran si les pouces sont inconnus. `el._spFig` porte la
+  // spec (fig de liste OU figure fusionnee de comparaison).
+  function exportDims(el){
+    const f = el && el._spFig;
+    const wIn = f && f.plotly && f.plotly.width_in;
+    const hIn = f && f.plotly && f.plotly.height_in;
+    if (wIn && hIn){
+      return { width: Math.max(1, Math.round(wIn * 96)), height: Math.max(1, Math.round(hIn * 96)) };
+    }
+    return {
+      width: Math.max(1, Math.round(el.clientWidth || (el.parentElement && el.parentElement.clientWidth) || 900)),
+      height: Math.max(1, Math.round(el.clientHeight || 540))
+    };
+  }
   function listPlotWidth(el, fig){
     if (document.body.classList.contains("no-fit")){ return Math.max(300, nativePlotWidth(fig)); }
     const wrap = el && el.parentElement;
@@ -3876,6 +4524,8 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
       { label: "Réinitialiser les axes", fn: function(){ modebarResetAxes(gd); } },
       { label: "Auto-échelle", fn: function(){ modebarAutoRange(gd); } },
       { label: "Ajouter courbe", keepOpen: true, fn: function(button){ openGuideLineMenu(gd, button.getBoundingClientRect()); } },
+      { label: "Copier l'encart (Ctrl+C)", fn: function(){ copyInsetAsVignette(gd); } },
+      { label: "Coller un encart (Ctrl+V)", fn: function(){ pasteVignette(gd); } },
       { label: "Mesures", checked: !!gd._spMeasureArmed, fn: function(){ armMeasure(gd); } },
       { label: "Auto-échelle Y", checked: !!gd._spAutoY, fn: function(){
           gd._spAutoY = !gd._spAutoY;
@@ -3912,11 +4562,143 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + "px";
   }
 
+  // ----------------------------------------------------------
+  // Annulation (Ctrl+Z) : pile de snapshots par figure.
+  //
+  // Tout l'etat modifiable d'une figure tient dans 4 sources : el._spBaseData
+  // (traces + legende), el._spBaseLayout (titres, labels, guides-shapes,
+  // annotations, legend.font...), l'etat d'encart (selection/placement/
+  // connector) et les plages d'axes (zoom/pan). On enregistre l'etat APRES
+  // chaque edition (scheduleUndoRecord, debounce 300 ms pour coalescer un geste :
+  // drag, molette, curseur), avec un etat initial (seedUndo) en base de pile.
+  // Ctrl+Z depile l'etat courant et restaure le precedent. La cible est la
+  // figure survolee (activeUndoEl). Silencieux : pile vide => rien.
+  // ----------------------------------------------------------
+  const UNDO_LIMIT = 50;
+  let activeUndoEl = null;
+
+  function captureAxisRanges(el){
+    const fl = el._fullLayout || {};
+    const out = {};
+    Object.keys(fl).forEach(function(k){
+      if (/^[xy]axis\d*$/.test(k) && fl[k] && Array.isArray(fl[k].range)){
+        out[k] = { range: fl[k].range.slice(), autorange: !!fl[k].autorange };
+      }
+    });
+    return out;
+  }
+
+  function captureUndoState(el){
+    return {
+      baseData: clone(el._spBaseData || []),
+      baseLayout: clone(el._spBaseLayout || {}),
+      vignettes: clone(el._spVignettes || []),
+      inset: el._spHasInset ? {
+        selection: clone(el._spInsetSelection),
+        placement: clone(el._spInsetPlacement),
+        connector: clone(el._spInsetConnector)
+      } : null,
+      ranges: captureAxisRanges(el)
+    };
+  }
+
+  function seedUndo(el){
+    try { el._spUndoStack = [captureUndoState(el)]; } catch (e) { el._spUndoStack = []; }
+  }
+
+  function scheduleUndoRecord(el){
+    if (!el || el._spUndoApplying){ return; }
+    if (el._spUndoTimer){ clearTimeout(el._spUndoTimer); }
+    el._spUndoTimer = setTimeout(function(){
+      el._spUndoTimer = null;
+      if (el._spUndoApplying || Date.now() < (el._spUndoSuppressUntil || 0)){ return; }
+      if (!el._spUndoStack){ seedUndo(el); return; }
+      el._spUndoStack.push(captureUndoState(el));
+      if (el._spUndoStack.length > UNDO_LIMIT + 1){ el._spUndoStack.shift(); }
+    }, 300);
+  }
+
+  // Restaure une figure entiere d'un coup dans la figure persistee (et cote
+  // extension) : Ctrl+Z preferere ce chemin aux patches incrementaux.
+  function persistRestoredFigure(el){
+    const m = /^plot-(\d+)$/.exec(el.id || "");
+    if (!m){ return; }
+    const id = parseInt(m[1], 10);
+    const fig = figStore[id];
+    if (!fig || !fig.plotly){ return; }
+    fig.plotly.data = clone(el._spBaseData || []);
+    fig.plotly.layout = clone(el._spBaseLayout || {});
+    fig.plotly.vignettes = clone(el._spVignettes || []);
+    fig.edited = true;
+    vscodeApi.postMessage({ type: "replaceFigurePlotly", id: id,
+      plotly: { data: fig.plotly.data, layout: fig.plotly.layout, vignettes: fig.plotly.vignettes } });
+  }
+
+  function restoreUndoState(el, snap){
+    if (!el || !snap || typeof Plotly === "undefined"){ return; }
+    if (el._spUndoTimer){ clearTimeout(el._spUndoTimer); el._spUndoTimer = null; }
+    el._spUndoApplying = true;
+    el._spUndoSuppressUntil = Date.now() + 800;   // ignore les records induits par la restauration
+    el._spBaseData = clone(snap.baseData);
+    el._spBaseLayout = clone(snap.baseLayout);
+    el._spVignettes = clone(snap.vignettes || []);
+    persistRestoredFigure(el);
+    if (snap.inset){
+      el._spInsetConnector = clone(snap.inset.connector);
+      applyZoomInset(el, clone(snap.inset.selection), clone(snap.inset.placement));
+    } else if (el._spHasInset){
+      clearZoomInset(el);
+    } else {
+      Plotly.react(el, clone(el._spBaseData || []), baseLayoutForPlot(el), el._spConfig || plotlyConfig(el._spFig || {}));
+    }
+    // Re-synchronise les overlays de vignettes avec l'etat restaure.
+    mountVignetteOverlays(el);
+    requestAnimationFrame(function(){ positionVignetteOverlays(el); });
+    // Plages d'axes (zoom/pan) : seulement les axes du layout de base (les axes
+    // d'encart sont re-derives par applyZoomInset).
+    const relayout = {};
+    Object.keys(snap.ranges || {}).forEach(function(k){
+      if (!(snap.baseLayout && snap.baseLayout[k]) && k !== "xaxis" && k !== "yaxis"){ return; }
+      const r = snap.ranges[k];
+      if (r.autorange){ relayout[k + ".autorange"] = true; }
+      else if (r.range){ relayout[k + ".range"] = r.range.slice(); }
+    });
+    const done = function(){ el._spUndoApplying = false; };
+    if (Object.keys(relayout).length){
+      try { Promise.resolve(Plotly.relayout(el, relayout)).then(done).catch(done); }
+      catch (e) { done(); }
+    } else { done(); }
+  }
+
+  function undoActiveFigure(){
+    const el = (activeUndoEl && document.body.contains(activeUndoEl)) ? activeUndoEl : null;
+    if (!el || !el._spUndoStack || el._spUndoStack.length < 2){ return; }
+    if (el._spUndoTimer){ clearTimeout(el._spUndoTimer); el._spUndoTimer = null; }
+    el._spUndoStack.pop();   // jeter l'etat courant ; restaurer le precedent (qui reste en sommet)
+    restoreUndoState(el, el._spUndoStack[el._spUndoStack.length - 1]);
+  }
+
+  document.addEventListener("keydown", function(e){
+    if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey){ return; }
+    const t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)){ return; }
+    const key = (e.key || "").toLowerCase();
+    if (key === "z"){ e.preventDefault(); undoActiveFigure(); return; }
+    const el = (activeUndoEl && document.body.contains(activeUndoEl)) ? activeUndoEl : null;
+    // Ctrl/Cmd+C : copier l'encart-loupe SEULEMENT si on survole l'encart
+    // lui-meme (sinon on laisse la copie normale agir). Ctrl/Cmd+V : coller la
+    // vignette sur la figure survolee (seulement si un encart a ete copie).
+    if (key === "c" && hoveredInsetEl && hoveredInsetEl._spInsetSelection){ e.preventDefault(); copyInsetAsVignette(hoveredInsetEl); return; }
+    if (key === "v" && el && vignetteClipboard){ e.preventDefault(); pasteVignette(el); return; }
+  });
+
   function renderPlotly(el, fig, fill, coordsEl){
     if (!fig.plotly || !el || typeof Plotly === "undefined"){ return; }
     const layout = JSON.parse(JSON.stringify(fig.plotly.layout || {}));
     delete layout.width;
-    stretchHorizontalDomains(layout);
+    // Planche multi-panneaux : la grille horizontale et les labels (a)(b)(c) sont
+    // deja places ; ne pas re-etirer les domaines (casserait colonnes et legende).
+    if (!fig.plotly._spBoard){ stretchHorizontalDomains(layout); }
     normalizeLayoutTitles(layout);
     // Coordonnees affichees en dehors du graphe : on coupe l'info-bulle
     // flottante sur le graphe et on garde seulement les evenements de survol.
@@ -3949,6 +4731,7 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
               const size = applyListPlotSizing(el, fig);
               Plotly.relayout(el, { width: size.width, height: size.height }).then(function(){
                 if (el._spHasInset){ positionInsetOverlay(el); }
+                positionVignetteOverlays(el);
               }).catch(function(){});
             } catch (e) {}
           }, 120);
@@ -4044,22 +4827,32 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     attachMeasure(el);
     if (el.on){
       el.on("plotly_relayout", function(update){
+        // Zoom / deplacement (pan) a enregistrer pour l'annulation. Calcule AVANT
+        // que autoScaleY ne leve _spAutoYApplying (sinon le geste utilisateur
+        // serait pris pour un recalage auto-Y et ignore).
+        const userRanged = !el._spUndoApplying && !el._spAutoYApplying
+          && Object.keys(update || {}).some(function(k){
+            return /\.range(\[\d\])?$/.test(k) || /\.autorange$/.test(k);
+          });
         // Auto-echelle Y : si on vient de zoomer/deplacer en X, recaler Y sur
         // les donnees visibles (sauf double-clic = autorange gere par Plotly).
-        if (el._spAutoY && !el._spAutoYApplying){
+        if (el._spAutoY && !el._spAutoYApplying && !el._spUndoApplying){
           const xMoved = ("xaxis.range[0]" in update) || ("xaxis.range" in update);
           if (xMoved && !update["xaxis.autorange"]){ autoScaleY(el); }
         }
         // Edition d'un titre / label d'axe (Plotly editable) -> persister.
         persistLayoutEdits(el, update);
         // Mode encart arme par Ctrl+clic sur la loupe : le trace de zoom
-        // devient un encart au lieu d'un zoom normal.
-        if (!el._spInsetArmed){ return; }
-        const selection = parseZoomInsetSelection(update);
-        if (!selection){ return; }
-        el._spInsetArmed = false;
-        setInsetArmedFeedback(el, coordsEl);
-        applyZoomInset(el, selection);
+        // devient un encart au lieu d'un zoom normal (applyZoomInset enregistre).
+        if (el._spInsetArmed){
+          const selection = parseZoomInsetSelection(update);
+          if (!selection){ return; }
+          el._spInsetArmed = false;
+          setInsetArmedFeedback(el, coordsEl);
+          applyZoomInset(el, selection);
+          return;
+        }
+        if (userRanged){ scheduleUndoRecord(el); }
       });
       el.on("plotly_legendclick", function(ev){
         if (!el._spLegendEditArmed){ return true; }
@@ -4071,6 +4864,16 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
         const pt = ev && ev.points && ev.points[0];
         if (pt && pt.curveNumber !== undefined){ openLegendEditor(el, pt.curveNumber); }
       });
+      // Clic sur la BOITE de legende (fond/cadre, pas une entree) en mode
+      // edition -> editeur de la taille generale de la legende.
+      el.addEventListener("click", function(ev){
+        if (!el._spLegendEditArmed){ return; }
+        const target = ev.target;
+        if (!target || !target.closest || !target.closest(".legend")){ return; }
+        if (target.closest(".traces")){ return; }   // entree de legende : editeur de trace
+        ev.preventDefault(); ev.stopPropagation();
+        openLegendBoxEditor(el);
+      }, true);
     }
     if (coordsEl && el.on){
       el.on("plotly_hover", function(ev){
@@ -4080,6 +4883,19 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
       });
       el.on("plotly_unhover", function(){ if (!el._spInsetArmed){ coordsEl.textContent = ""; } });
     }
+    // Vignettes persistees (encarts colles d'un autre graphe) : les axes/traces/
+    // bordure sont deja bakees dans fig.plotly (donc rendues par newPlot). On
+    // recharge le registre et on (re)monte les overlays draggables.
+    el._spVignettes = clone((fig.plotly && fig.plotly.vignettes) || []);
+    if (el._spVignettes.length){
+      mountVignetteOverlays(el);
+      requestAnimationFrame(function(){ positionVignetteOverlays(el); });
+    }
+    // Cible de l'annulation : la derniere figure survolee (liste, overlay ou
+    // comparaison passent tous par ici). Etat initial = base de la pile d'undo.
+    el.addEventListener("mouseenter", function(){ activeUndoEl = el; });
+    if (!activeUndoEl){ activeUndoEl = el; }
+    seedUndo(el);
   }
   function resizeListPlots(){
     if (typeof Plotly === "undefined"){ return; }
@@ -4095,6 +4911,7 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
         const size = applyListPlotSizing(p.el, p.fig);
         Plotly.relayout(p.el, { width: size.width, height: size.height }).then(function(){
           if (p.el._spHasInset){ positionInsetOverlay(p.el); }
+          positionVignetteOverlays(p.el);
         }).catch(function(){});
       } catch (e) {}
     }
@@ -4172,6 +4989,17 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     if (p.python){ tip.push("Python : " + p.python + (p.python_version ? " (" + p.python_version + ")" : "")); }
     if (p.git_commit){ tip.push("Git : " + (p.git_branch || "?") + " " + p.git_commit + (p.git_dirty ? " (modifie)" : "")); }
     if (p.timestamp){ tip.push("Date : " + p.timestamp); }
+    // Ctrl/Cmd+clic : ouvrir le script Python a la ligne du site d'appel.
+    const openPath = p.source || p.script;
+    if (openPath){
+      div.classList.add("prov-clickable");
+      tip.push("Ctrl/Cmd+clic : ouvrir le script");
+      div.addEventListener("click", function(ev){
+        if (!(ev.ctrlKey || ev.metaKey)){ return; }
+        ev.preventDefault();
+        vscodeApi.postMessage({ type: "openSource", path: openPath, line: p.source ? (p.line || null) : null });
+      });
+    }
     div.title = tip.join("\n");
     return div;
   }
@@ -4273,6 +5101,13 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
         exportCsv(document.getElementById("plot-" + fig.id), fig);
       });
       menuButtons.push(bCsv);
+
+      const bImport = document.createElement("button");
+      bImport.className = "textbtn";
+      bImport.textContent = "Importer CSV";
+      bImport.title = "Superposer les donnees d'un fichier .csv/.dat sur ce graphe (ou glisser-deposer le fichier)";
+      bImport.addEventListener("click", function(){ pickCsvForImport(String(fig.id)); });
+      menuButtons.push(bImport);
 
       const bSci = document.createElement("button");
       bSci.className = "textbtn";
@@ -4990,7 +5825,8 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
   document.getElementById("compareCopy").addEventListener("click", function(){
     const el = currentComparePlotEl();
     if (!el){ return; }
-    Plotly.toImage(el, { format: "png", scale: 2 })
+    const d = exportDims(el);   // ratio naturel
+    withExportLegend(el, function(){ return Plotly.toImage(el, { format: "png", width: d.width, height: d.height, scale: 2 }); })
       .then(function(url){ return dataUrlToBlob(url); })
       .then(function(blob){ return navigator.clipboard.write([ new ClipboardItem({ "image/png": blob }) ]); })
       .then(function(){ vscodeApi.postMessage({ type: "copied" }); })
@@ -5105,10 +5941,28 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
   // Construit un data URL PDF raster a partir d'un element Plotly vivant
   // (inclut encart / sous-graphe d'erreur / superposition). FlateDecode
   // (sans perte) si CompressionStream dispo, sinon repli JPEG/DCTDecode.
+  // Pendant un export : faire DISPARAITRE completement les courbes desactivees
+  // au clic (visible 'legendonly') -> visible:false les retire de la legende ET
+  // du trace (showlegend:false seul laissait l'entree de legende visible dans
+  // certains cas). Restaure ensuite en 'legendonly' : elles restent dans le
+  // Plotly live, re-activables si on change d'avis. `fn` doit renvoyer une promesse.
+  function withExportLegend(el, fn){
+    const hidden = [];
+    ((el && el.data) || []).forEach(function(t, i){ if (t.visible === "legendonly"){ hidden.push(i); } });
+    if (!hidden.length){ return Promise.resolve(fn()); }
+    const restore = function(){ try { return Plotly.restyle(el, { visible: "legendonly" }, hidden); } catch (e) { return Promise.resolve(); } };
+    return Promise.resolve(Plotly.restyle(el, { visible: false }, hidden))
+      .then(function(){ return fn(); })
+      .then(function(res){ return Promise.resolve(restore()).then(function(){ return res; }); })
+      .catch(function(err){ return Promise.resolve(restore()).then(function(){ throw err; }); });
+  }
+
   function buildRasterPdfDataUrl(el){
-    const cssW = Math.max(1, Math.round(el.clientWidth ||
-      (el.parentElement && el.parentElement.clientWidth) || 900));
-    const cssH = Math.max(1, Math.round(el.clientHeight || 540));
+    // Ratio naturel (width_in x height_in) -> page = exactement les pouces de la
+    // figure (cssW*0.75pt = width_in*96*0.75 = width_in*72pt = width_in pouce).
+    const dims = exportDims(el);
+    const cssW = dims.width;
+    const cssH = dims.height;
     const pageW = Number((cssW * 0.75).toFixed(2));   // px CSS @96dpi -> points
     const pageH = Number((cssH * 0.75).toFixed(2));
     const SCALE = 3;
@@ -5149,10 +6003,11 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
       const title = (pane.querySelector(".compare-pane-title") || {}).textContent || "";
       const plot = pane.querySelector(".compare-plot");
       if (plot && typeof Plotly !== "undefined" && Plotly.toImage){
-        const w = Math.max(1, Math.round(plot.clientWidth || 600));
-        const h = Math.max(1, Math.round(plot.clientHeight || 400));
-        return Plotly.toImage(plot, { format: "png", width: w, height: h, scale: scale })
-          .then(function(url){ return { url: url, title: title }; });
+        const d = exportDims(plot);   // ratio naturel de ce panneau
+        // Masquer les courbes desactivees de la legende de ce panneau (restaure apres).
+        return withExportLegend(plot, function(){
+          return Plotly.toImage(plot, { format: "png", width: d.width, height: d.height, scale: scale });
+        }).then(function(url){ return { url: url, title: title }; });
       }
       const img = pane.querySelector("img");
       if (img && img.src){ return Promise.resolve({ url: img.src, title: title }); }
@@ -5239,6 +6094,185 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     }).catch(function(err){ postExportResult(msg.requestId, false, null, String(err)); });
   }
 
+  // ----------------------------------------------------------
+  // Rapport PDF multipage : une figure par page A4 (titre + figure ajustee +
+  // provenance + numero de page). Selection = cases de comparaison cochees, sinon
+  // toutes les figures, dans l'ordre de la liste. Compose chaque page sur un
+  // canvas puis assemble via PdfExport.buildPdf({ pages }). Declenche par le
+  // message exportReport (Tout enregistrer -> format PDF). Voir exportReport.
+  // ----------------------------------------------------------
+  function loadImage(url){
+    return new Promise(function(resolve, reject){
+      const im = new Image();
+      im.onload = function(){ resolve(im); };
+      im.onerror = function(){ reject(new Error("image illisible")); };
+      im.src = url;
+    });
+  }
+
+  // Provenance en texte simple (memes champs que la ligne .prov sous le titre).
+  function provText(fig){
+    const p = fig && fig.provenance;
+    if (!p){ return ""; }
+    const parts = [];
+    if (p.source){ parts.push(baseName(p.source) + (p.line ? ":" + p.line : "") + (p.function ? " (" + p.function + ")" : "")); }
+    else if (p.script){ parts.push(baseName(p.script)); }
+    if (p.git_commit){ parts.push((p.git_branch ? p.git_branch + "@" : "") + p.git_commit + (p.git_dirty ? "*" : "")); }
+    if (p.timestamp){ parts.push(p.timestamp); }
+    return parts.join("  ·  ");
+  }
+
+  // Image d'une figure pour le rapport : Plotly vivant -> toImage ; sinon asset
+  // (anim -> 1re frame, svg, png). Ne rejette jamais : renvoie img=null si echec
+  // (la page affichera "rendu indisponible") pour ne pas casser tout le rapport.
+  function reportFigureImage(id){
+    const fig = figStore[id];
+    if (!fig){ return Promise.resolve(null); }
+    const title = fig.title || ("Figure " + id);
+    const prov = provText(fig);
+    let urlP;
+    if (fig.plotly){
+      const el = document.getElementById("plot-" + id);
+      if (el && typeof Plotly !== "undefined" && Plotly.toImage){
+        const d = exportDims(el);
+        urlP = withExportLegend(el, function(){
+          return Plotly.toImage(el, { format: "png", width: d.width, height: d.height, scale: 2 });
+        });
+      } else { urlP = Promise.resolve(null); }
+    } else if (fig.frames && fig.frames.length){
+      urlP = Promise.resolve("data:image/png;base64," + fig.frames[0]);
+    } else if (fig.svg){
+      urlP = Promise.resolve("data:image/svg+xml;base64," + fig.svg);
+    } else if (fig.png){
+      urlP = Promise.resolve("data:image/png;base64," + fig.png);
+    } else { urlP = Promise.resolve(null); }
+    return Promise.resolve(urlP).then(function(url){
+      if (!url){ return { img: null, title: title, prov: prov }; }
+      return loadImage(url).then(function(img){ return { img: img, title: title, prov: prov }; })
+        .catch(function(){ return { img: null, title: title, prov: prov }; });
+    }).catch(function(){ return { img: null, title: title, prov: prov }; });
+  }
+
+  // Texte sur une ligne, ecrete a maxW (clip rectangulaire) pour ne jamais
+  // deborder de la zone de contenu de la page.
+  function drawClippedText(ctx, text, x, y, maxW, lineH){
+    ctx.save();
+    ctx.beginPath(); ctx.rect(x, y, maxW, lineH); ctx.clip();
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+
+  // Compose une page A4 portrait (raster). dpi pilote la finesse du texte.
+  function composeReportPage(item, pageNo, total, dpi){
+    const inch = function(v){ return Math.round(v * dpi); };
+    const W = inch(8.2677), H = inch(11.6929);   // A4 portrait
+    const canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, W, H);
+    ctx.textBaseline = "top"; ctx.textAlign = "left";
+
+    const margin = inch(0.6);
+    const titleFont = Math.max(8, Math.round(inch(0.20)));
+    const provFont = Math.max(6, Math.round(inch(0.11)));
+    const titleBand = inch(0.5);
+    const provBand = inch(0.45);
+
+    // Titre
+    ctx.fillStyle = "#111111";
+    ctx.font = "600 " + titleFont + "px sans-serif";
+    drawClippedText(ctx, item.title || "", margin, margin, W - 2 * margin, titleBand);
+
+    // Figure ajustee (contain) dans la zone centrale
+    const cx = margin, cyTop = margin + titleBand;
+    const cw = W - 2 * margin;
+    const ch = H - margin - titleBand - provBand - margin;
+    if (item.img){
+      const iw = item.img.naturalWidth || item.img.width || 1;
+      const ih = item.img.naturalHeight || item.img.height || 1;
+      const s = Math.min(cw / iw, ch / ih);
+      const dw = Math.max(1, Math.round(iw * s));
+      const dh = Math.max(1, Math.round(ih * s));
+      const dx = cx + Math.round((cw - dw) / 2);
+      const dy = cyTop + Math.round((ch - dh) / 2);
+      ctx.drawImage(item.img, dx, dy, dw, dh);
+    } else {
+      ctx.fillStyle = "#999999"; ctx.font = provFont + "px sans-serif";
+      ctx.fillText("rendu indisponible", cx, cyTop);
+    }
+
+    // Provenance (bas gauche) + numero de page (bas droite)
+    const footY = H - margin - provFont;
+    ctx.font = provFont + "px sans-serif";
+    if (item.prov){
+      ctx.fillStyle = "#666666";
+      drawClippedText(ctx, item.prov, margin, footY, cw - inch(1.2), provFont * 1.4);
+    }
+    ctx.fillStyle = "#999999"; ctx.textAlign = "right";
+    ctx.fillText(pageNo + " / " + total, W - margin, footY);
+    ctx.textAlign = "left";
+    return canvas;
+  }
+
+  // Canvas de page -> options d'image pour PdfExport (FlateDecode sans perte si
+  // CompressionStream dispo, sinon JPEG/DCTDecode). MediaBox = A4 en points.
+  function reportPageImage(canvas){
+    const w = canvas.width, h = canvas.height;
+    const A4W = 595.28, A4H = 841.89;
+    if (typeof CompressionStream !== "undefined"){
+      const ctx = canvas.getContext("2d");
+      const rgb = rgbaToRgbOnWhite(ctx.getImageData(0, 0, w, h).data);
+      return deflateZlib(rgb).then(function(def){
+        return { imageBytes: def, pixelWidth: w, pixelHeight: h,
+                 pageWidth: A4W, pageHeight: A4H, filter: "FlateDecode", colorComponents: 3 };
+      });
+    }
+    const jpeg = canvas.toDataURL("image/jpeg", 0.92);
+    return Promise.resolve({ imageBytes: bytesFromBase64DataUrl(jpeg), pixelWidth: w, pixelHeight: h,
+      pageWidth: A4W, pageHeight: A4H, filter: "DCTDecode", colorComponents: 3 });
+  }
+
+  // Ids des figures dans l'ordre d'affichage (cartes du DOM).
+  function figureIdsInListOrder(){
+    const out = [];
+    Array.prototype.forEach.call(list.querySelectorAll(".card"), function(c){
+      const m = /^fig-(.+)$/.exec(c.id || "");
+      if (m){ out.push(m[1]); }
+    });
+    return out;
+  }
+
+  function exportReport(msg){
+    if (typeof PdfExport === "undefined"){
+      postExportResult(msg.requestId, false, null, "PdfExport indisponible");
+      return;
+    }
+    const dpi = Math.max(72, Math.min(300, Number((msg.options || {}).dpi) || 150));
+    const includeProv = (msg.options || {}).provenance !== false;   // provenance optionnelle
+    const order = figureIdsInListOrder();
+    const ids = selectedForCompare.length
+      ? order.filter(function(s){ return selectedForCompare.indexOf(Number(s)) !== -1; })
+      : order;
+    if (!ids.length){
+      postExportResult(msg.requestId, false, null, "aucune figure a exporter");
+      return;
+    }
+    const seq = ids.reduce(function(p, id){
+      return p.then(function(pages){
+        return reportFigureImage(id).then(function(item){
+          const it = item || { img: null, title: "Figure " + id, prov: "" };
+          if (!includeProv){ it.prov = ""; }
+          const canvas = composeReportPage(it, pages.length + 1, ids.length, dpi);
+          return reportPageImage(canvas).then(function(opt){ pages.push(opt); return pages; });
+        });
+      });
+    }, Promise.resolve([]));
+    seq.then(function(pages){
+      const bytes = PdfExport.buildPdf({ pages: pages });
+      postExportResult(msg.requestId, true, bytesToPdfDataUrl(bytes), null);
+    }).catch(function(err){ postExportResult(msg.requestId, false, null, String(err)); });
+  }
+
   function exportPlotly(msg){
     const isCompare = msg.id === "compare";
     // Mode comparaison cote a cote : plusieurs panneaux independants -> on
@@ -5259,17 +6293,21 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
       return;
     }
     const options = msg.options || {};
+    // Courbes desactivees au clic de legende (visible 'legendonly') : a exclure
+    // de la legende a l'export.
+    const hasHidden = ((el.data) || []).some(function(t){ return t.visible === "legendonly"; });
 
     // PDF : figure sans encart et hors comparaison -> PDF matplotlib natif
     // (signal useNative). Sinon -> PDF raster genere ici (encart/erreurs inclus).
     if (options.format === "pdf"){
       // PDF natif vectoriel seulement si l'extension l'autorise (figure non
-      // editee) et sans encart. Sinon -> PDF raster de l'element vivant (edite).
-      if (!isCompare && !el._spHasInset && options.allowNative !== false){
+      // editee), sans encart, ET sans courbe masquee (le PDF natif matplotlib
+      // remontre toutes les courbes). Sinon -> PDF raster de l'element vivant.
+      if (!isCompare && !el._spHasInset && options.allowNative !== false && !hasHidden){
         postExportResult(msg.requestId, true, null, null, true);
         return;
       }
-      buildRasterPdfDataUrl(el)
+      withExportLegend(el, function(){ return buildRasterPdfDataUrl(el); })
         .then(function(dataUrl){ postExportResult(msg.requestId, true, dataUrl, null); })
         .catch(function(err){ postExportResult(msg.requestId, false, null, String(err)); });
       return;
@@ -5277,8 +6315,9 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
 
     const format = options.format === "svg" ? "svg" : "png";
     const scale = Math.max(0.25, Number(options.scale) || 1);
-    const width = Math.max(1, Math.round(el.clientWidth || (el.parentElement && el.parentElement.clientWidth) || 900));
-    const height = Math.max(1, Math.round(el.clientHeight || listPlotHeight(el, fig || {}) || 540));
+    const dims = exportDims(el);   // ratio naturel matplotlib (pas la taille etiree a l'ecran)
+    const width = dims.width;
+    const height = dims.height;
     const layout = el.layout || {};
     const previous = {
       paper_bgcolor: layout.paper_bgcolor,
@@ -5286,13 +6325,15 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     };
     const bg = options.transparent ? "rgba(0,0,0,0)" : "#ffffff";
 
-    Promise.resolve(Plotly.relayout(el, { paper_bgcolor: bg, plot_bgcolor: bg }))
-      .then(function(){
-        return Plotly.toImage(el, { format: format, width: width, height: height, scale: scale });
-      })
-      .then(function(dataUrl){
-        return Promise.resolve(Plotly.relayout(el, previous)).then(function(){ return dataUrl; });
-      })
+    withExportLegend(el, function(){
+      return Promise.resolve(Plotly.relayout(el, { paper_bgcolor: bg, plot_bgcolor: bg }))
+        .then(function(){
+          return Plotly.toImage(el, { format: format, width: width, height: height, scale: scale });
+        })
+        .then(function(dataUrl){
+          return Promise.resolve(Plotly.relayout(el, previous)).then(function(){ return dataUrl; });
+        });
+    })
       .then(function(dataUrl){ postExportResult(msg.requestId, true, dataUrl, null); })
       .catch(function(err){
         try { Plotly.relayout(el, previous); } catch (e) {}
@@ -5320,9 +6361,517 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     delete figStore[id];
   }
 
+  // ============================================================
+  // Import de donnees : glisser un .csv/.dat/.txt sur un graphe (superposition,
+  // ex. mesures vs modele) ou sur la zone vide (nouveau graphe). Parsing pur dans
+  // media/data_import.js (DataImport) ; lecture du fichier soit via FileReader
+  // (glisser systeme), soit via l'extension/fs (glisser depuis l'explorateur VS
+  // Code, qui ne fournit qu'une URI). Apres parsing, un petit dialogue propose le
+  // mappage X/Y (auto : 1re colonne = X, autres = Y) avant de tracer en marqueurs.
+  // ============================================================
+  const dataReadPending = {};   // requestId -> resolve (lecture via l'extension)
+  let importChain = Promise.resolve();   // serialise les dialogues entre glissers
+
+  function isFileDrag(e){
+    const dt = e.dataTransfer; if (!dt || !dt.types){ return false; }
+    const t = dt.types;
+    function has(x){ return Array.prototype.indexOf.call(t, x) >= 0; }
+    return has("Files") || has("text/uri-list") || has("resourceurls")
+        || Array.prototype.some.call(t, function(x){ return /vnd\.code\.tree/i.test(x); });
+  }
+
+  // Une chaine vers une URI exploitable par vscode.Uri.parse cote extension.
+  function normUri(s){
+    s = String(s);
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(s)){
+      try { const d = decodeURIComponent(s); if (/^[a-z][a-z0-9+.-]*:/i.test(d)){ s = d; } } catch (e) {}
+    }
+    return s;
+  }
+
+  function urisFromTransfer(dt){
+    const out = [];
+    try {
+      const ru = dt.getData("resourceurls");
+      if (ru){ JSON.parse(ru).forEach(function(u){ if (u){ out.push(normUri(u)); } }); }
+    } catch (e) {}
+    if (!out.length){
+      const ul = dt.getData("text/uri-list") || "";
+      ul.split(/\r?\n/).forEach(function(l){ l = l.trim(); if (l && l.charAt(0) !== "#"){ out.push(l); } });
+    }
+    if (!out.length){
+      const tp = (dt.getData("text/plain") || dt.getData("text") || "").trim();
+      if (tp && /^[a-z][a-z0-9+.-]*:\/\//i.test(tp)){ out.push(tp); }
+    }
+    return out;
+  }
+
+  function readSystemFile(file){
+    return new Promise(function(resolve){
+      const r = new FileReader();
+      r.onload = function(){ resolve({ name: file.name, text: String(r.result || "") }); };
+      r.onerror = function(){ resolve({ name: file.name, error: "lecture impossible" }); };
+      try { r.readAsText(file); } catch (e) { resolve({ name: file.name, error: String(e) }); }
+    });
+  }
+
+  function readVscodeUri(uri){
+    return new Promise(function(resolve){
+      const requestId = "imp" + Date.now() + "_" + Math.floor(Math.random() * 1e6);
+      dataReadPending[requestId] = resolve;
+      vscodeApi.postMessage({ type: "readDataFile", requestId: requestId, uri: uri, target: null });
+      setTimeout(function(){
+        if (dataReadPending[requestId]){ delete dataReadPending[requestId]; resolve({ error: "delai depasse a la lecture du fichier" }); }
+      }, 8000);
+    });
+  }
+
+  function dropTargetFor(e){
+    const card = e.target && e.target.closest ? e.target.closest(".card") : null;
+    if (card && card.id.indexOf("fig-") === 0){ return card.id.slice(4); }
+    return "new";
+  }
+
+  function baseFromFileName(name){ return String(name || "donnees").replace(/\.[^.]+$/, ""); }
+
+  function importedTrace(s){
+    return { type: "scatter", mode: "markers", x: s.x, y: s.y, name: s.name,
+             marker: { size: 6 }, hoverinfo: "none", _spImported: true };
+  }
+
+  // Superpose les series importees sur une figure Plotly existante (live + persiste
+  // + annulable). Repli sur une nouvelle figure si la cible n'est pas une figure Plotly.
+  function applyOverlay(id, series){
+    const el = document.getElementById("plot-" + id);
+    if (!el || !el._spFig || !el._spFig.plotly || typeof Plotly === "undefined"){
+      applyNewFigure(series, null);
+      return;
+    }
+    series.forEach(function(s){
+      const t = importedTrace(s);
+      el._spFig.plotly.data.push(clone(t));        // copie canonique du webview
+      el._spBaseData.push(clone(t));               // base re-utilisee (undo, encart)
+      Plotly.addTraces(el, clone(t));
+      vscodeApi.postMessage({ type: "appendFigureTrace", id: el._spFig.id, trace: clone(t) });
+    });
+    scheduleUndoRecord(el);
+    vscodeApi.postMessage({ type: "notify", level: "info",
+      text: "Chaz Plots : " + series.length + " serie(s) superposee(s) (Ctrl+Z pour annuler)." });
+  }
+
+  // Cree une nouvelle figure a partir des series importees (depot sur zone vide).
+  function applyNewFigure(series, baseName){
+    const data = series.map(importedTrace).map(function(t){ delete t.hoverinfo; return t; });
+    const plotly = {
+      data: data,
+      layout: { margin: { l: 60, r: 20, t: 30, b: 50 }, xaxis: {}, yaxis: {}, showlegend: data.length > 1 }
+    };
+    const title = baseName ? ("Données importées : " + baseName) : "Données importées";
+    vscodeApi.postMessage({ type: "createFigureFromData", title: title, plotly: plotly });
+  }
+
+  // Dialogue de mappage X/Y (auto-rempli, ajustable). Resout quand ferme.
+  function openImportDialog(fileName, parsed, target){
+    return new Promise(function(resolve){
+      const cols = parsed.columns;
+      const backdrop = document.createElement("div");
+      backdrop.className = "data-import-backdrop";
+      const dlg = document.createElement("div");
+      dlg.className = "data-import-dialog";
+      dlg.setAttribute("role", "dialog");
+      dlg.setAttribute("aria-label", "Importer des donnees");
+
+      const h = document.createElement("div");
+      h.className = "di-title";
+      h.textContent = "Importer « " + fileName + " »";
+      dlg.appendChild(h);
+
+      const sub = document.createElement("div");
+      sub.className = "di-sub";
+      sub.textContent = (target === "new" ? "Nouveau graphe" : "Superposer sur ce graphe")
+        + " · " + cols.length + " colonne(s), " + parsed.rowCount + " ligne(s)"
+        + (parsed.hasHeader ? "" : " · sans en-tete");
+      dlg.appendChild(sub);
+
+      const nameWrap = document.createElement("label");
+      nameWrap.className = "di-field";
+      nameWrap.textContent = "Nom des series";
+      const nameInput = document.createElement("input");
+      nameInput.type = "text";
+      nameInput.value = baseFromFileName(fileName);
+      nameWrap.appendChild(nameInput);
+      dlg.appendChild(nameWrap);
+
+      const xWrap = document.createElement("label");
+      xWrap.className = "di-field";
+      xWrap.textContent = "Colonne X";
+      const xSel = document.createElement("select");
+      const optIdx = document.createElement("option");
+      optIdx.value = "-1"; optIdx.textContent = "(indice 0, 1, 2, …)";
+      xSel.appendChild(optIdx);
+      cols.forEach(function(c, i){
+        const o = document.createElement("option");
+        o.value = String(i); o.textContent = c.name;
+        xSel.appendChild(o);
+      });
+      xSel.value = "0";   // auto : 1re colonne = X
+      xWrap.appendChild(xSel);
+      dlg.appendChild(xWrap);
+
+      const yWrap = document.createElement("div");
+      yWrap.className = "di-field";
+      const yLabel = document.createElement("div");
+      yLabel.textContent = "Colonnes Y";
+      yWrap.appendChild(yLabel);
+      const yBox = document.createElement("div");
+      yBox.className = "di-ychecks";
+      const checks = cols.map(function(c, i){
+        const lab = document.createElement("label");
+        lab.className = "di-ycheck";
+        const cb = document.createElement("input");
+        cb.type = "checkbox"; cb.value = String(i);
+        cb.checked = (i !== 0);   // auto : toutes sauf X
+        lab.appendChild(cb);
+        lab.appendChild(document.createTextNode(" " + c.name));
+        yBox.appendChild(lab);
+        return { cb: cb, lab: lab, index: i };
+      });
+      yWrap.appendChild(yBox);
+      dlg.appendChild(yWrap);
+
+      function syncXExclusion(){
+        const xi = parseInt(xSel.value, 10);
+        checks.forEach(function(ch){
+          const isX = ch.index === xi;
+          ch.lab.classList.toggle("di-disabled", isX);
+          ch.cb.disabled = isX;
+          if (isX){ ch.cb.checked = false; }
+        });
+      }
+      xSel.addEventListener("change", syncXExclusion);
+      syncXExclusion();
+
+      const btns = document.createElement("div");
+      btns.className = "di-btns";
+      const cancel = document.createElement("button");
+      cancel.className = "textbtn"; cancel.textContent = "Annuler";
+      const ok = document.createElement("button");
+      ok.className = "textbtn primary"; ok.textContent = "Tracer";
+      btns.appendChild(cancel); btns.appendChild(ok);
+      dlg.appendChild(btns);
+
+      function close(){
+        document.removeEventListener("keydown", onKey, true);
+        backdrop.remove(); dlg.remove();
+        resolve();
+      }
+      function confirm(){
+        const xi = parseInt(xSel.value, 10);
+        const yIndices = checks.filter(function(ch){ return ch.cb.checked && !ch.cb.disabled; })
+                               .map(function(ch){ return ch.index; });
+        if (!yIndices.length){
+          vscodeApi.postMessage({ type: "notify", level: "warn", text: "Chaz Plots : choisissez au moins une colonne Y." });
+          return;
+        }
+        const series = DataImport.seriesFromColumns(cols, xi, yIndices, nameInput.value.trim())
+                                 .filter(function(s){ return s.x.length; });
+        if (!series.length){
+          vscodeApi.postMessage({ type: "notify", level: "warn", text: "Chaz Plots : aucune donnee exploitable dans la selection." });
+          return;
+        }
+        if (target === "new"){ applyNewFigure(series, nameInput.value.trim()); }
+        else { applyOverlay(target, series); }
+        close();
+      }
+      function onKey(ev){
+        if (ev.key === "Escape"){ ev.preventDefault(); close(); }
+        else if (ev.key === "Enter"){ ev.preventDefault(); confirm(); }
+      }
+      ok.addEventListener("click", confirm);
+      cancel.addEventListener("click", close);
+      backdrop.addEventListener("click", close);
+      document.addEventListener("keydown", onKey, true);
+
+      document.body.appendChild(backdrop);
+      document.body.appendChild(dlg);
+      nameInput.focus(); nameInput.select();
+    });
+  }
+
+  function importOne(item, target){
+    if (!item || item.error || !item.text){
+      vscodeApi.postMessage({ type: "notify", level: "error",
+        text: "Chaz Plots : " + ((item && item.error) || "fichier illisible") });
+      return Promise.resolve();
+    }
+    const parsed = DataImport.parseDelimited(item.text);
+    if (parsed.error){
+      vscodeApi.postMessage({ type: "notify", level: "warn",
+        text: "Chaz Plots : " + parsed.error + " (" + (item.name || "fichier") + ")" });
+      return Promise.resolve();
+    }
+    return openImportDialog(item.name || "donnees", parsed, target);
+  }
+
+  // Import via bouton (selecteur de fichier) plutot que glisser : reutilise le
+  // meme pipeline (readSystemFile -> importOne). target = id de figure (superposer)
+  // ou "new" (nouveau graphe).
+  let importFileInput = null;
+  let importPickTarget = "new";
+  function importFileList(files, target){
+    if (!files || !files.length){ return; }
+    const promises = [];
+    for (let i = 0; i < files.length; i++){ promises.push(readSystemFile(files[i])); }
+    importChain = importChain.then(function(){
+      return Promise.all(promises).then(function(items){
+        let chain = Promise.resolve();
+        items.forEach(function(it){ chain = chain.then(function(){ return importOne(it, target); }); });
+        return chain;
+      });
+    }).catch(function(){});
+  }
+  function ensureImportInput(){
+    if (importFileInput){ return importFileInput; }
+    importFileInput = document.createElement("input");
+    importFileInput.type = "file";
+    importFileInput.accept = ".csv,.dat,.txt,.tsv,.tab,text/plain,text/csv";
+    importFileInput.multiple = true;
+    importFileInput.style.display = "none";
+    importFileInput.addEventListener("change", function(){
+      importFileList(importFileInput.files, importPickTarget);
+      importFileInput.value = "";   // permet de re-selectionner le meme fichier
+    });
+    document.body.appendChild(importFileInput);
+    return importFileInput;
+  }
+  function pickCsvForImport(target){
+    importPickTarget = target;
+    ensureImportInput().click();
+  }
+
+  // Import d'image auto-portee via bouton (selecteur de fichier) plutot que
+  // glisser : le glisser-deposer de fichier exige Shift (VS Code intercepte
+  // sinon), d'ou ce bouton. Reutilise routeSystemImage -> importImageData.
+  let imageFileInput = null;
+  function ensureImageInput(){
+    if (imageFileInput){ return imageFileInput; }
+    imageFileInput = document.createElement("input");
+    imageFileInput.type = "file";
+    imageFileInput.accept = ".png,.svg,image/png,image/svg+xml";
+    imageFileInput.multiple = true;
+    imageFileInput.style.display = "none";
+    imageFileInput.addEventListener("change", function(){
+      const files = imageFileInput.files;
+      if (files){ for (let i = 0; i < files.length; i++){ routeSystemImage(files[i]); } }
+      imageFileInput.value = "";   // permet de re-selectionner le meme fichier
+    });
+    document.body.appendChild(imageFileInput);
+    return imageFileInput;
+  }
+  function pickImageForImport(){ ensureImageInput().click(); }
+
+  let dropHighlightCard = null;
+  function setDropHighlight(card){
+    if (dropHighlightCard === card){ return; }
+    if (dropHighlightCard){ dropHighlightCard.classList.remove("sp-drop-target"); }
+    dropHighlightCard = card;
+    if (card){ card.classList.add("sp-drop-target"); }
+  }
+
+  document.addEventListener("dragover", function(e){
+    if (!isFileDrag(e)){ return; }
+    e.preventDefault();
+    try { e.dataTransfer.dropEffect = "copy"; } catch (err) {}
+    document.body.classList.add("sp-file-dragging");
+    setDropHighlight(e.target && e.target.closest ? e.target.closest(".card") : null);
+  });
+  document.addEventListener("dragleave", function(e){
+    if (e.relatedTarget === null || (e.clientX <= 0 && e.clientY <= 0)){
+      document.body.classList.remove("sp-file-dragging");
+      setDropHighlight(null);
+    }
+  });
+  // Image PNG/SVG deposee : peut porter des donnees Chaz Plots embarquees -> on
+  // l'envoie a l'extension qui lit le chunk et propose de recreer la figure.
+  function routeSystemImage(file){
+    const r = new FileReader();
+    r.onload = function(){
+      const bytes = new Uint8Array(r.result);
+      let bin = "";
+      for (let i = 0; i < bytes.length; i++){ bin += String.fromCharCode(bytes[i]); }
+      vscodeApi.postMessage({ type: "importImageData", b64: btoa(bin), name: file.name });
+    };
+    try { r.readAsArrayBuffer(file); } catch (e) {}
+  }
+  function queueCsvImport(promise, target){
+    importChain = importChain.then(function(){
+      return Promise.resolve(promise).then(function(it){ return importOne(it, target); });
+    }).catch(function(){});
+  }
+
+  document.addEventListener("drop", function(e){
+    if (!isFileDrag(e)){ return; }
+    e.preventDefault();
+    document.body.classList.remove("sp-file-dragging");
+    setDropHighlight(null);
+    const target = dropTargetFor(e);
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    if (files && files.length){
+      for (let i = 0; i < files.length; i++){
+        const f = files[i];
+        if (/\.(png|svg)$/i.test(f.name)){ routeSystemImage(f); }   // image -> recreation
+        else { queueCsvImport(readSystemFile(f), target); }         // csv/dat/txt -> overlay/nouveau
+      }
+      return;
+    }
+    urisFromTransfer(dt).forEach(function(u){
+      if (/\.(png|svg)(\?|#|$)/i.test(u)){ vscodeApi.postMessage({ type: "importImageUri", uri: u }); }
+      else { queueCsvImport(readVscodeUri(u), target); }
+    });
+  });
+
+  // ============================================================
+  // Constructeur de planche multi-panneaux : fusionne les figures Plotly
+  // selectionnees (cases de comparaison) en UNE figure multi-sous-graphes
+  // (a)(b)(c), legende partagee. Math pure dans media/board_layout.js
+  // (BoardLayout). La modale propose grille / largeur / legende / ordre
+  // (chips glissables) avec apercu live ; "Composer" envoie la spec a
+  // createFigureFromData -> nouvelle figure de l'historique (export + .tex via
+  // Bundle publication).
+  // ============================================================
+  const boardOverlay = document.getElementById("boardOverlay");
+  let boardOrderIds = [];      // ids (string) des panneaux, dans l'ordre a,b,c...
+  let boardDragIdx = -1;
+  let boardPreviewTimer = null;
+
+  function boardFigs(){
+    return boardOrderIds.map(function(id){ return figStore[id]; }).filter(Boolean);
+  }
+  function readBoardOpts(){
+    return {
+      rows: Math.max(1, parseInt(document.getElementById("boardRows").value, 10) || 1),
+      cols: Math.max(1, parseInt(document.getElementById("boardCols").value, 10) || 1),
+      widthIn: parseFloat(document.getElementById("boardWidth").value) || 3.4,
+      legend: document.getElementById("boardLegend").value || "bottom",
+      title: document.getElementById("boardTitleInput").value.trim()
+    };
+  }
+
+  function renderBoardChips(){
+    const cont = document.getElementById("boardOrder");
+    cont.innerHTML = "";
+    boardOrderIds.forEach(function(id, i){
+      const fig = figStore[id];
+      const chip = document.createElement("div");
+      chip.className = "board-chip";
+      chip.draggable = true;
+      chip.dataset.idx = String(i);
+      const tag = document.createElement("span");
+      tag.className = "board-chip-tag";
+      tag.textContent = BoardLayout.panelLabel(i);
+      const name = document.createElement("span");
+      name.textContent = (fig && fig.title) ? fig.title : ("Figure " + id);
+      chip.appendChild(tag); chip.appendChild(name);
+      bindChipDrag(chip, cont);
+      cont.appendChild(chip);
+    });
+  }
+  function clearChipMarks(cont){
+    Array.prototype.forEach.call(cont.children, function(c){ c.classList.remove("drop-before"); });
+  }
+  function bindChipDrag(chip, cont){
+    chip.addEventListener("dragstart", function(e){
+      boardDragIdx = Number(chip.dataset.idx);
+      chip.classList.add("dragging");
+      try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", chip.dataset.idx); } catch (err) {}
+    });
+    chip.addEventListener("dragend", function(){ chip.classList.remove("dragging"); clearChipMarks(cont); boardDragIdx = -1; });
+    chip.addEventListener("dragover", function(e){ e.preventDefault(); clearChipMarks(cont); chip.classList.add("drop-before"); });
+    chip.addEventListener("dragleave", function(){ chip.classList.remove("drop-before"); });
+    chip.addEventListener("drop", function(e){
+      e.preventDefault();
+      const to = Number(chip.dataset.idx);
+      if (boardDragIdx === -1 || to === boardDragIdx){ clearChipMarks(cont); return; }
+      const moved = boardOrderIds.splice(boardDragIdx, 1)[0];
+      const dest = boardDragIdx < to ? to - 1 : to;   // "inserer avant la cible"
+      boardOrderIds.splice(dest, 0, moved);
+      renderBoardChips();
+      refreshBoardPreview();
+    });
+  }
+
+  function refreshBoardPreview(){
+    if (boardPreviewTimer){ clearTimeout(boardPreviewTimer); }
+    boardPreviewTimer = setTimeout(function(){
+      if (typeof Plotly === "undefined" || typeof BoardLayout === "undefined"){ return; }
+      const spec = BoardLayout.composeBoard(boardFigs(), readBoardOpts());
+      const prev = document.getElementById("boardPreview");
+      const layout = clone(spec.layout);
+      delete layout.width; layout.autosize = true;
+      Plotly.react(prev, clone(spec.data), layout, { displayModeBar: false, responsive: true });
+    }, 120);
+  }
+
+  function openBoardBuilder(){
+    if (typeof BoardLayout === "undefined"){ return; }
+    const order = figureIdsInListOrder();
+    const sel = order.filter(function(s){ return selectedForCompare.indexOf(Number(s)) !== -1; });
+    const plotIds = sel.filter(function(s){ const f = figStore[s]; return f && f.plotly && !f.frames; });
+    const excluded = sel.length - plotIds.length;
+    if (plotIds.length < 2){
+      vscodeApi.postMessage({ type: "notify", level: "warn",
+        text: "Chaz Plots : selectionne au moins 2 graphes Plotly pour composer une planche." });
+      return;
+    }
+    boardOrderIds = plotIds;
+    const g = BoardLayout.defaultGrid(plotIds.length);
+    document.getElementById("boardRows").value = g.rows;
+    document.getElementById("boardCols").value = g.cols;
+    document.getElementById("boardTitleInput").value = "Planche";
+    document.getElementById("boardHint").textContent = excluded > 0
+      ? (excluded + " figure(s) non-Plotly exclue(s) de la planche.") : "";
+    renderBoardChips();
+    boardOverlay.classList.add("show");
+    refreshBoardPreview();
+  }
+  function closeBoardBuilder(){
+    boardOverlay.classList.remove("show");
+    try { if (typeof Plotly !== "undefined"){ Plotly.purge(document.getElementById("boardPreview")); } } catch (e) {}
+  }
+  function composeBoardFigure(){
+    const figs = boardFigs();
+    if (figs.length < 2){
+      vscodeApi.postMessage({ type: "notify", level: "warn", text: "Chaz Plots : au moins 2 panneaux pour une planche." });
+      return;
+    }
+    const opts = readBoardOpts();
+    const spec = BoardLayout.composeBoard(figs, opts);
+    vscodeApi.postMessage({
+      type: "createFigureFromData",
+      title: opts.title || "Planche",
+      plotly: { data: spec.data, layout: spec.layout, width_in: spec.width_in, height_in: spec.height_in, _spBoard: true }
+    });
+    closeBoardBuilder();
+    vscodeApi.postMessage({ type: "notify", level: "info",
+      text: "Chaz Plots : planche composee (export PNG/SVG/PDF et Bundle .tex depuis sa carte)." });
+  }
+
+  if (boardBtn){ boardBtn.addEventListener("click", openBoardBuilder); }
+  ["boardRows", "boardCols", "boardWidth", "boardLegend", "boardTitleInput"].forEach(function(id){
+    const el = document.getElementById(id);
+    if (el){ el.addEventListener("input", refreshBoardPreview); el.addEventListener("change", refreshBoardPreview); }
+  });
+  document.getElementById("boardClose").addEventListener("click", closeBoardBuilder);
+  document.getElementById("boardCancel").addEventListener("click", closeBoardBuilder);
+  document.getElementById("boardCompose").addEventListener("click", composeBoardFigure);
+  boardOverlay.addEventListener("click", function(e){ if (e.target === boardOverlay){ closeBoardBuilder(); } });
+
   window.addEventListener("message", function(event){
     const msg = event.data;
-    if (msg.type === "exportPlotly"){
+    if (msg.type === "exportReport"){
+      exportReport(msg);
+    } else if (msg.type === "exportPlotly"){
       exportPlotly(msg);
     } else if (msg.type === "add"){
       clearCompareSelectionUnlessKept();   // nouvelle figure -> vide la selection (sauf mode "Garder")
@@ -5358,25 +6907,38 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
         n = n + 1;
       }
       refreshCount();
+    } else if (msg.type === "dataFileContent"){
+      // Reponse a readDataFile (glisser depuis l'explorateur VS Code).
+      const resolve = dataReadPending[msg.requestId];
+      if (resolve){
+        delete dataReadPending[msg.requestId];
+        resolve({ name: msg.name, text: msg.text, error: msg.error });
+      }
     }
   });
 
-  document.getElementById("pasteFig").addEventListener("click", function(){ vscodeApi.postMessage({ type: "pasteFigure" }); });
-  document.getElementById("saveAll").addEventListener("click", function(){ vscodeApi.postMessage({ type: "saveAll" }); });
-  document.getElementById("deleteAll").addEventListener("click", function(){ vscodeApi.postMessage({ type: "deleteAll" }); });
+  function closeGlobalTools(){
+    const menu = document.getElementById("globalTools");
+    if (menu){ menu.open = false; }
+  }
+  document.getElementById("importCsv").addEventListener("click", function(){ closeGlobalTools(); pickCsvForImport("new"); });
+  document.getElementById("importImage").addEventListener("click", function(){ closeGlobalTools(); pickImageForImport(); });
+  document.getElementById("pasteFig").addEventListener("click", function(){ closeGlobalTools(); vscodeApi.postMessage({ type: "pasteFigure" }); });
+  document.getElementById("saveAll").addEventListener("click", function(){
+    // Sous-ensemble selectionne (cases de comparaison), en ordre de liste ; vide = toutes.
+    const sel = figureIdsInListOrder()
+      .filter(function(s){ return selectedForCompare.indexOf(Number(s)) !== -1; })
+      .map(Number);
+    vscodeApi.postMessage({ type: "saveAll", ids: sel });
+  });
+  document.getElementById("deleteAll").addEventListener("click", function(){ closeGlobalTools(); vscodeApi.postMessage({ type: "deleteAll" }); });
   if (searchInput){
     searchInput.addEventListener("input", function(e){
       searchQuery = e.target.value || "";
       applySearchFilter();
     });
   }
-  const sortSelect = document.getElementById("sortSelect");
-  if (sortSelect){
-    sortSelect.addEventListener("change", function(e){
-      sortMode = e.target.value || "arrival";
-      applySort();
-    });
-  }
+
   document.getElementById("fitToggle").addEventListener("change", function(e){
     document.body.classList.toggle("no-fit", !e.target.checked);
     resizeListPlots();

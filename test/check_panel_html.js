@@ -12,23 +12,29 @@ const placeholders = [
   "{{errorMathUri}}", "{{insetLayoutUri}}", "{{plotNavUri}}",
   "{{measureMathUri}}", "{{csvExportUri}}", "{{compareUtilUri}}",
   "{{bundleMetaUri}}", "{{figureFilterUri}}", "{{pdfExportUri}}",
-  "{{legendEditUri}}", "{{autoscaleUri}}", "{{customPlotStylesJson}}",
+  "{{legendEditUri}}", "{{autoscaleUri}}", "{{dataImportUri}}", "{{boardLayoutUri}}",
+  "{{customPlotStylesJson}}",
 ];
 const requiredIds = [
-  "count", "searchInput", "compareStatus", "compareSide", "compareStack",
-  "fitToggle", "sortSelect", "pasteFig", "saveAll", "deleteAll", "list", "empty", "overlay", "ovTitle",
+  "count", "searchInput", "selectionTools", "compareStatus", "compareSide", "compareStack",
+  "fitToggle", "importCsv", "importImage", "pasteFig", "saveAll", "deleteAll", "list", "empty", "overlay", "ovTitle",
   "ovCoords", "ovClose", "ovBody", "compareOverlay", "compareTitle",
   "compareOpacityWrap", "compareOpacity", "compareClose", "errorToggle",
   "errorWarn", "errorPanel", "errorApply", "errorHide", "errorReset", "errorSummary", "compareBody",
   "keepSelToggle",
   "compareSave", "compareCopy", "compareCsv", "compareBundle",
   "publicationEditor", "pubPreset", "pubApply", "pubClose",
+  "pubCreateBtn", "pubCreate", "pubCreateName", "pubCreateTitle", "pubCreateAxis",
+  "pubCreateLegend", "pubCreateTick", "pubCreateLine", "pubCreateGrid", "pubCreateSave", "pubCreateCancel",
   "annotationEditor", "annText", "annTextColor", "annFontSize", "annBold", "annArrowColor",
   "annShowArrow", "annTextColors", "annArrowColors", "annApply", "annDelete", "annClose",
   "legendEditor", "leName", "leTextValue", "leFontSize", "leBold", "leItalic",
   "leColor", "leDash", "leWidth", "leSymbol", "leMarkerSize", "leBaseColors", "leAdvancedColors",
-  "leSvSquare", "leHueStrip", "leHex", "leApply", "leClose",
+  "leSvSquare", "leHueStrip", "leHex", "leApply", "leClose", "leLegendSize", "leDeleteGuide",
   "insetConnectorEditor", "iceCorners", "iceColors", "iceLines", "iceClose",
+  "boardBtn", "boardOverlay", "boardTitleInput", "boardRows", "boardCols",
+  "boardWidth", "boardLegend", "boardOrder", "boardPreview", "boardHint",
+  "boardClose", "boardCancel", "boardCompose",
 ];
 
 const errors = [];

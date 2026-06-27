@@ -80,6 +80,11 @@
           "default": true,
           "description": "Ouvrir/afficher automatiquement le panneau quand une figure arrive."
         },
+        "chazPlots.autoDetachWindow": {
+          "type": "boolean",
+          "default": false,
+          "description": "Détacher automatiquement le panneau Graphes dans sa propre fenêtre dès sa création (au lieu d'un onglet à côté de l'éditeur). Une seule fenêtre est réutilisée : relancer le même script (ou un autre) renvoie sur cette fenêtre, sans en ouvrir une seconde."
+        },
         "chazPlots.customPlotStyles": {
           "type": "object",
           "default": {},
@@ -95,6 +100,17 @@
           "default": 200,
           "minimum": 0,
           "description": "Nombre maximal de figures conservées entre les sessions (persistance disque). 0 = illimité ; au-delà, les plus anciennes sont évincées."
+        },
+        "chazPlots.embedFigureData": {
+          "type": "boolean",
+          "default": true,
+          "description": "Figure auto-portée : intégrer les données de la courbe (spec Plotly) dans le PNG/SVG enregistré, afin de recréer la figure en déposant l'image dans le panneau. Les données sont déjà visibles dans l'image (pas de fuite de code source)."
+        },
+        "chazPlots.embedFigureDataMaxKB": {
+          "type": "number",
+          "default": 2048,
+          "minimum": 0,
+          "description": "Taille maximale (en Ko compressés) des données intégrées à une image auto-portée. Au-delà, l'image est enregistrée sans données embarquées."
         }
       }
     }

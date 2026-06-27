@@ -30,7 +30,7 @@ check("texEscape: backslash et accolades", function () {
 // --- buildTex ---
 check("buildTex: includegraphics sans extension + caption + label", function () {
   const tex = BM.buildTex("my_fig", "My Title");
-  assert.ok(tex.indexOf("\\includegraphics[width=\\linewidth]{my_fig/figure}") !== -1, tex);
+  assert.ok(tex.indexOf("\\includegraphics[width=\\columnwidth]{my_fig/figure}") !== -1, tex);
   assert.ok(tex.indexOf("\\caption{My Title}") !== -1, tex);
   assert.ok(tex.indexOf("\\label{fig:my_fig}") !== -1, tex);
   assert.ok(tex.indexOf("\\begin{figure}") !== -1);

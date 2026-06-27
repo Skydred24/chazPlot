@@ -77,4 +77,31 @@ check("buildPdf: le flux image binaire est present tel quel", function () {
   assert.ok(found !== -1, "flux image introuvable dans le PDF");
 });
 
+check("buildPdf multipage: Count, Kids et MediaBox par page", function () {
+  const a = new Uint8Array([10, 11]);
+  const b = new Uint8Array([20, 21]);
+  const pdf = PdfExport.buildPdf({ pages: [
+    { imageBytes: a, pixelWidth: 4, pixelHeight: 5, pageWidth: 595, pageHeight: 842, filter: "FlateDecode" },
+    { imageBytes: b, pixelWidth: 6, pixelHeight: 7, pageWidth: 595, pageHeight: 842, filter: "FlateDecode" }
+  ] });
+  const s = toLatin1(pdf);
+  assert.ok(/\/Count 2/.test(s), "Count attendu 2");
+  assert.ok(/\/Kids \[3 0 R 6 0 R\]/.test(s), "Kids incorrects : " + (s.match(/\/Kids[^\]]*\]/) || [""])[0]);
+  assert.strictEqual((s.match(/\/MediaBox \[0 0 595 842\]/g) || []).length, 2, "2 MediaBox attendus");
+  assert.ok(s.indexOf("%PDF-1.4") === 0 && s.indexOf("%%EOF") !== -1, "structure PDF invalide");
+  assert.ok(/xref\n0 9\n/.test(s), "table xref attendue 0 9 (1 + 2 + 3*2 objets)");
+});
+
+check("buildPdf multipage: startxref pointe sur la table xref", function () {
+  const pdf = PdfExport.buildPdf({ pages: [
+    { imageBytes: img, pixelWidth: 2, pixelHeight: 2, filter: "FlateDecode" },
+    { imageBytes: img, pixelWidth: 2, pixelHeight: 2, filter: "FlateDecode" }
+  ] });
+  const s = toLatin1(pdf);
+  const xrefPos = s.lastIndexOf("\nxref\n") + 1;
+  const m = /startxref\s+(\d+)/.exec(s);
+  assert.ok(m, "startxref absent");
+  assert.strictEqual(Number(m[1]), xrefPos, "startxref ne pointe pas sur xref");
+});
+
 console.log("\n" + passed + " tests OK");

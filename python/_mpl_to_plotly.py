@@ -1204,16 +1204,23 @@ def _convert_bars(container, axis_suffix):
     xs = []
     ys = []
     widths = []
+    bases = []
     colors = []
     for rect in rects:
         if orientation == "horizontal":
+            # Barre horizontale : longueur = largeur du rectangle, base = bord
+            # gauche (rect.get_x(), != 0 pour un empilement via `left`).
             xs.append(float(rect.get_width()))
             ys.append(float(rect.get_y() + rect.get_height() / 2.0))
             widths.append(float(rect.get_height()))
+            bases.append(float(rect.get_x()))
         else:
+            # Barre verticale : hauteur = hauteur du rectangle, base = bord bas
+            # (rect.get_y(), != 0 pour un empilement via `bottom`).
             xs.append(float(rect.get_x() + rect.get_width() / 2.0))
             ys.append(float(rect.get_height()))
             widths.append(float(rect.get_width()))
+            bases.append(float(rect.get_y()))
         colors.append(_hex(rect.get_facecolor()))
 
     trace = {
@@ -1221,6 +1228,9 @@ def _convert_bars(container, axis_suffix):
         "x": xs,
         "y": ys,
         "width": widths,
+        # `base` reproduit le `bottom`/`left` matplotlib : chaque segment part de
+        # son offset (empilement = tour unique, avec barmode 'overlay' au layout).
+        "base": bases,
         "marker": {"color": colors},
         "orientation": "h" if orientation == "horizontal" else "v",
         "xaxis": "x" + axis_suffix,
@@ -2129,6 +2139,13 @@ def convert_figure_with_reason(fig):
     # entre les mailles) -> on retombe sur le SVG plutot qu'un graphe vide.
     if len(data) == 0:
         return None, _reason("empty", "Aucune trace exploitable produite")
+
+    # Barres : matplotlib place chaque rectangle en absolu (x + bottom). Avec le
+    # `base` par barre, 'overlay' reproduit fidelement empilements (meme x) ET
+    # groupes (x differents) ; le defaut Plotly 'group' decalerait les barres
+    # (-> empilement casse en mini-tours cote a cote).
+    if any(t.get("type") == "bar" for t in data):
+        layout["barmode"] = "overlay"
 
     # Figure science : ecriture basique cote Plotly (titres, labels d'axes,
     # annotations, ticktext) -> pas de `\mathdefault{}`/`\it` litteral.

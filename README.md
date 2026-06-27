@@ -1,4 +1,4 @@
-# Chaz Plots — panneau de graphes matplotlib pour VS Code
+﻿# Chaz Plots — panneau de graphes matplotlib pour VS Code
 
 Reproduit le volet **Graphes** de Spyder dans VS Code : chaque `plt.show()`
 envoie la figure dans un panneau unique et scrollable, sans ouvrir de fenêtre
@@ -58,6 +58,21 @@ lecteur intégré, et tout est **persisté** d'une session à l'autre.
   figure prete a exporter sans retoucher le script Python. Des **presets
   personnalises** peuvent etre ajoutes au menu via le reglage
   `chazPlots.customPlotStyles`.
+- **Import CSV / DAT** : glissez un `.csv`, `.dat` ou `.txt` sur une figure pour
+  superposer des mesures, ou sur la zone vide pour creer un nouveau graphe. Le
+  bouton **Importer CSV** ouvre le meme assistant de mapping X/Y sans glisser-deposer.
+- **Image -> code matplotlib** : les PNG/SVG exportes peuvent embarquer leurs
+  donnees Plotly ; redeposez l'image dans Chaz Plots pour regenerer un script
+  matplotlib propre.
+- **Planche multi-panneaux** : composez plusieurs figures selectionnees en une
+  planche `(a)`, `(b)`, `(c)` avec grille, ordre, largeur cible et legende partagee.
+- **Copier-coller de figures** : copiez une figure dans une fenetre VS Code et
+  recollez-la dans une autre, provenance incluse.
+- **Undo par figure** : `Ctrl/Cmd+Z` annule les editions du graphe survole
+  (style, traces ajoutees, textes, encarts, vignettes, zoom/pan).
+- **Lignes et annotations ajoutables** : depuis le menu **Ajouter courbe**, creez
+  des `hline`/`vline`, puis deplacez-les, raccourcissez-les et modifiez couleur,
+  style et epaisseur avec l'editeur de legende.
 - **Copier** : met l'image de la figure dans le presse-papiers (collable dans
   Word, un mail, un chat…).
 - **Export CSV** : bouton « CSV » sur les figures interactives — exporte les
@@ -105,14 +120,14 @@ lecteur intégré, et tout est **persisté** d'une session à l'autre.
 
 ### Paquet .vsix (recommandé)
 ```bash
-npx @vscode/vsce package          # produit chaz-plots-0.10.0.vsix
-code --install-extension chaz-plots-0.10.0.vsix
+npx @vscode/vsce package          # produit chaz-plots-0.13.0.vsix
+code --install-extension chaz-plots-0.13.0.vsix
 ```
 
 ### Sans droits administrateur (Windows)
 Aucune compilation, aucun `npm install` (extension en JavaScript pur) :
 1. Copiez le dossier dans
-   `%USERPROFILE%\.vscode\extensions\hugo.chaz-plots-0.10.0`.
+   `%USERPROFILE%\.vscode\extensions\hugo.chaz-plots-0.13.0`.
 2. Rechargez VS Code (`Ctrl+Shift+P` → « Reload Window »).
 3. Ouvrez un **nouveau terminal** (les variables d'environnement ne sont
    injectées que dans les terminaux créés après l'activation).
@@ -143,6 +158,12 @@ Ouvrez le dossier dans VS Code et appuyez sur `F5` (« Run Extension »).
   natif des figures Plotly (l'export PDF raster reste possible via le webview).
 - `chazPlots.customPlotStyles` (défaut `{}`) — presets de style personnalisés
   ajoutés au menu **Style publication** (cf. ci-dessous).
+- `chazPlots.autoDetachWindow` (defaut `false`) - ouvrir automatiquement le
+  panneau Graphes dans une fenetre VS Code separee, pratique en double ecran.
+- `chazPlots.embedFigureData` (defaut `true`) - embarquer les donnees Plotly dans
+  les PNG/SVG exportes pour permettre **Image -> code**.
+- `chazPlots.embedFigureDataMaxKB` (defaut `2048`) - taille maximale des donnees
+  embarquees dans une image.
 - `chazPlots.persistFigures` (défaut `true`) — conserver les figures entre
   sessions. Désactivez pour un mode ultra rapide sans écriture disque.
 - `chazPlots.autoReveal` (défaut `true`) — afficher le panneau à chaque figure.
@@ -163,6 +184,86 @@ anim = FuncAnimation(fig, update, frames=60, interval=40)  # gardez la référen
 plt.show()                      # lecteur d'animation dans le panneau
 ```
 
+## Mini-demos
+
+Ces exemples montrent les fonctionnalites visibles en quelques lignes. Lancez-les
+depuis un **nouveau terminal VS Code** apres activation de l'extension.
+
+### 1. Historique interactif et provenance
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+x = np.linspace(0, 2*np.pi, 300)
+plt.plot(x, np.sin(x), label="sin(x)")
+plt.plot(x, np.cos(x), label="cos(x)")
+plt.title("Deux courbes interactives")
+plt.xlabel("x"); plt.ylabel("amplitude"); plt.legend(); plt.show()
+```
+
+A voir : zoom, coordonnees, provenance `script:ligne`, recherche, export PNG/SVG/PDF.
+
+### 2. Sous-graphes, annotations et lignes de repere
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+x = np.linspace(0, 6, 250)
+fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
+ax1.plot(x, np.exp(-x/4)*np.sin(3*x), label="signal")
+ax1.axhline(0, color="0.4", linestyle="--", label="zero")
+ax1.annotate("maximum local", xy=(0.55, 0.75), xytext=(1.25, 0.95), arrowprops={"arrowstyle": "->"})
+ax1.legend()
+ax2.plot(x, np.gradient(np.sin(x), x), color="tab:orange", label="derivee")
+ax2.axvline(3, color="tab:red", linestyle=":", label="repere")
+ax2.legend(); plt.show()
+```
+
+A voir : `axhline` / `axvline` interactives, annotations, edition des courbes,
+titres, axes et lignes de repere.
+
+### 3. Comparer plusieurs runs
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+x = np.linspace(0, 10, 400)
+for damping in [0.05, 0.12, 0.2]:
+    plt.figure()
+    plt.plot(x, np.exp(-damping*x)*np.sin(2*x), label=f"damping={damping}")
+    plt.title(f"Run damping={damping}"); plt.legend(); plt.show()
+```
+
+Cochez plusieurs graphes : **Cote a cote**, **Superposer**, puis **Erreur** pour
+tracer les ecarts par rapport a une reference choisie au clic.
+
+### 4. Importer des mesures CSV sur un modele
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+x = np.linspace(0, 5, 250)
+plt.plot(x, np.sin(x), label="modele")
+plt.title("Modele + mesures importees"); plt.legend(); plt.show()
+```
+
+Ensuite utilisez **Importer CSV** dans la barre d'outils, ou dans le menu d'une
+figure pour superposer un fichier `.csv`, `.dat` ou `.txt`. Le glisser-deposer
+fonctionne aussi avec **Shift** maintenu.
+
+### 5. Exporter puis regenerer le code depuis l'image
+
+Exportez une figure en PNG/SVG, puis utilisez **Image -> code** sur cette image :
+Chaz Plots ouvre un script matplotlib reconstruit depuis les donnees embarquees.
+
+### 6. Planche de publication
+
+Generez plusieurs figures, cochez-les, puis cliquez **Planche** pour composer une
+figure `(a)`, `(b)`, `(c)` avec ordre, grille, largeur cible et legende partagee.
+
+> Pour une page Marketplace plus parlante, ajoutez ensuite 2 ou 3 GIF dans
+> `docs/media/` : `demo-show.gif`, `demo-compare.gif`, `demo-image-to-code.gif`,
+> puis inserez-les avec `![Comparaison](docs/media/demo-compare.gif)`.
 ## Style SciencePlots
 
 Les styles `science`, `ieee` et `nature` (issus de
@@ -250,6 +351,10 @@ chaz-plots/
 │   ├── compare_util.js                  zoom sync + sous-graphes (pur)
 │   ├── bundle_meta.js                   bundle publication (pur)
 │   ├── pdf_export.js                    génération PDF raster webview (pur)
+│   ├── data_import.js                   import CSV/DAT/TXT + mapping X/Y (pur)
+│   ├── figure_codec.js                  donnees embarquees PNG/SVG (pur)
+│   ├── plotly_to_py.js                  generation de code matplotlib (pur)
+│   ├── board_layout.js                  planche multi-panneaux (pur)
 │   ├── legend_edit.js                  edition/prefixes de legende (pur)
 │   └── figure_filter.js                 recherche + tri des figures (pur)
 ├── python/
@@ -285,9 +390,29 @@ node test/test_figure_filter.js  # recherche (provenance) + tri des figures
 node test/test_inset_layout.js   # placement de l'encart de zoom
 node test/test_pdf_export.js     # génération PDF raster webview
 node test/test_legend_edit.js    # edition/prefixes de legende
+node test/test_data_import.js   # import CSV/DAT/TXT + mapping X/Y
+node test/test_figure_codec.js  # donnees embarquees dans PNG/SVG
+node test/test_plotly_to_py.js  # regeneration de code matplotlib
+node test/test_board_layout.js  # composition de planche multi-panneaux
 node test/check_panel_html.js    # garde-fou structurel du webview
 node --check extension.js storage.js media/legend_edit.js
 ```
+
+## Nouveautes v0.13.0
+
+- **Import CSV / DAT** : bouton dedie et glisser-deposer avec mapping X/Y pour
+  creer un graphe ou superposer des mesures a une figure existante.
+- **Image -> code** : les PNG/SVG exportes peuvent embarquer la spec Plotly ;
+  l'extension peut ensuite regenerer un script matplotlib depuis l'image.
+- **Planche multi-panneaux** : composition de figures selectionnees en grille
+  `(a)`, `(b)`, `(c)` avec ordre modifiable, largeur cible et legende partagee.
+- **Copier-coller entre fenetres** : une figure copiee peut etre recollee dans
+  une autre fenetre VS Code.
+- **Undo par figure** : `Ctrl/Cmd+Z` annule les editions du graphe survole.
+- **Lignes de repere et annotations enrichies** : hline/vline, texte, fleches,
+  couleurs, epaisseurs et positions editables depuis le panneau.
+- **Fenetre detachee optionnelle** : `chazPlots.autoDetachWindow` ouvre le
+  panneau Graphes dans sa propre fenetre VS Code.
 
 ## Nouveautes v0.10.0
 
