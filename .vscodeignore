@@ -27,3 +27,13 @@ CLAUDE.md
 
 # Ne pas empaqueter un .vsix dans le .vsix
 *.vsix
+
+# Brouillons / maquettes / outils de montage / enregistrements (hors runtime)
+tools/**
+tmp/**
+*.mp4
+montage.py
+montage_exemple.md
+_preview_mockup.html
+_toolbar_variants.html
+ig_*.png
