@@ -60,6 +60,34 @@
     return { x0: cols[0], y0: rows[0], x1: cols[cols.length - 1], y1: rows[rows.length - 1] };
   }
 
+  // Retire les pixels appartenant a une LIGNE DE GRILLE : une rangee (ou colonne)
+  // dont les pixels s'etendent sur presque toute la largeur (hauteur) de la boite
+  // ET la couvrent quasi sans trou. C'est le profil typique d'un trait de grille /
+  // d'axe ; une vraie courbe de donnees est rarement une droite plate pleine
+  // etendue. Resout le faux positif « grille grise prise pour une courbe ».
+  function removeGridPixels(pixels, box, opts) {
+    opts = opts || {};
+    const spanFrac = opts.spanFrac != null ? opts.spanFrac : 0.8;
+    const cover = opts.cover != null ? opts.cover : 0.9;
+    const W = box.x1 - box.x0, H = box.y1 - box.y0;
+    const byRow = {}, byCol = {};
+    for (let k = 0; k < pixels.length; k++) {
+      const p = pixels[k];
+      (byRow[p.y] = byRow[p.y] || []).push(p.x);
+      (byCol[p.x] = byCol[p.x] || []).push(p.y);
+    }
+    function lineLike(vals, full) {
+      let lo = Infinity, hi = -Infinity;
+      for (let i = 0; i < vals.length; i++) { if (vals[i] < lo) lo = vals[i]; if (vals[i] > hi) hi = vals[i]; }
+      const span = hi - lo;
+      return span >= spanFrac * full && span > 0 && vals.length / (span + 1) >= cover;
+    }
+    const gridRows = {}, gridCols = {};
+    for (const y in byRow) if (lineLike(byRow[y], W)) gridRows[y] = 1;
+    for (const x in byCol) if (lineLike(byCol[x], H)) gridCols[x] = 1;
+    return pixels.filter(function (p) { return !gridRows[p.y] && !gridCols[p.x]; });
+  }
+
   // Teinte HSV en degres [0,360), ou -1 si achromatique (gris/noir/blanc).
   function rgbHue(r, g, b) {
     const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
@@ -155,7 +183,14 @@
       if (px.sat > c.bestSat) { c.bestSat = px.sat; c.color = [px.r, px.g, px.b]; }
     }
     const all = clusters.slice();
-    if (dark) all.push(dark);
+    // Anti-grille : ne s'applique qu'au bucket SOMBRE (gris/noir), ou tombent les
+    // traits de grille/axe. Les clusters COLORES sont preserves tels quels — une
+    // courbe plate pleine largeur de couleur ne doit pas etre confondue avec une
+    // grille (qui, elle, est achromatique).
+    if (dark) {
+      const dpix = opts.removeGrid === false ? dark.pixels : removeGridPixels(dark.pixels, box);
+      all.push({ color: dark.color, pixels: dpix });
+    }
 
     // 4) filtres : population, largeur, densite de colonnes
     const minN = Math.max(minPixels, Math.floor(total * minFrac));
@@ -188,18 +223,104 @@
     }
     const span = maxx - minx + 1;
     let present = 0, totalHeight = 0;
+    // longueurs des plages CONTINUES de colonnes presentes : un tiret-point
+    // alterne plages longues (tirets) et plages d'1 colonne (points), la ou un
+    // tiret simple n'a que des plages longues -> les distingue par bimodalite.
+    const onRuns = []; let run = 0;
     for (let x = minx; x <= maxx; x++) {
       const ys = colRows[x];
-      if (!ys) continue;
-      present++;
-      totalHeight += Math.max.apply(null, ys) - Math.min.apply(null, ys) + 1;
+      if (ys) {
+        present++;
+        totalHeight += Math.max.apply(null, ys) - Math.min.apply(null, ys) + 1;
+        run++;
+      } else if (run > 0) { onRuns.push(run); run = 0; }
     }
+    if (run > 0) onRuns.push(run);
     const coverage = present / span;
     const avgHeight = totalHeight / present;
-    if (avgHeight >= 3 && coverage < 0.85) return { style: "markers" };
+    // Markers = pastilles : amas hauts ET CLAIRSEMES (plus de trou que d'encre).
+    // L'epaisseur seule ne suffit pas — un trait EPAIS troue n'est pas des points.
+    // Critere : hauteur >= 3, faible couverture, et trous moyens > plages moyennes.
+    const avgRun = onRuns.length ? present / onRuns.length : 0;
+    const nGaps = Math.max(1, onRuns.length - 1);
+    const avgGap = (span + 1 - present) / nGaps;
+    if (avgHeight >= 3 && coverage < 0.5 && avgGap > avgRun) return { style: "markers" };
     if (coverage >= 0.85) return { style: "solid" };
-    if (coverage >= 0.45) return { style: "dashed" };
+    if (coverage >= 0.45) {
+      let nLong = 0, nShort = 0;
+      for (let i = 0; i < onRuns.length; i++) { if (onRuns[i] >= 3) nLong++; else if (onRuns[i] === 1) nShort++; }
+      if (nLong >= 2 && nShort >= nLong * 0.6) return { style: "dashdot" };
+      return { style: "dashed" };
+    }
     return { style: "dotted" };
+  }
+
+  // Densifie une courbe a trous (tirets, pointilles) en interpolant lineairement
+  // les colonnes manquantes, mais SEULEMENT a travers les trous <= maxGap (evite
+  // de relier deux morceaux reellement distincts). Une courbe en tirets ressort
+  // ainsi continue.
+  function bridgeGaps(points, opts) {
+    opts = opts || {};
+    const maxGap = opts.maxGap != null ? opts.maxGap : 12;
+    if (points.length < 2) return points.slice();
+    const sorted = points.slice().sort(function (a, b) { return a.xpx - b.xpx; });
+    const out = [sorted[0]];
+    for (let i = 1; i < sorted.length; i++) {
+      const a = sorted[i - 1], b = sorted[i], gap = b.xpx - a.xpx;
+      if (gap > 1 && gap <= maxGap) {
+        for (let x = a.xpx + 1; x < b.xpx; x++) {
+          const t = (x - a.xpx) / gap;
+          out.push({ xpx: x, ypx: a.ypx + t * (b.ypx - a.ypx) });
+        }
+      }
+      out.push(b);
+    }
+    return out;
+  }
+
+  // Composantes connexes (voisinage 8 + pontage `bridge` px pour traverser
+  // l'anti-aliasing / petits trous), triees par taille decroissante.
+  function connectedComponents(pixels, opts) {
+    opts = opts || {};
+    const bridge = opts.bridge != null ? opts.bridge : 4;
+    const key = {};
+    for (let i = 0; i < pixels.length; i++) key[pixels[i].x + "_" + pixels[i].y] = i;
+    const seen = new Uint8Array(pixels.length);
+    const comps = [];
+    for (let i = 0; i < pixels.length; i++) {
+      if (seen[i]) continue;
+      const comp = [], stack = [i]; seen[i] = 1;
+      while (stack.length) {
+        const j = stack.pop(); comp.push(pixels[j]);
+        const p = pixels[j];
+        for (let dy = -bridge; dy <= bridge; dy++) for (let dx = -bridge; dx <= bridge; dx++) {
+          if (!dx && !dy) continue;
+          const k = key[(p.x + dx) + "_" + (p.y + dy)];
+          if (k != null && !seen[k]) { seen[k] = 1; stack.push(k); }
+        }
+      }
+      comps.push(comp);
+    }
+    comps.sort(function (a, b) { return b.length - a.length; });
+    return comps;
+  }
+
+  // Retire les **échantillons de légende** et autres petites composantes isolées :
+  // toute composante connexe dont la taille est < `minFrac` de la plus grosse est
+  // jetée. Sûr pour les tirets (les dashes sont de taille comparable entre eux,
+  // donc tous gardés) ; un swatch de légende, court, est petit devant une courbe
+  // pleine largeur et disparaît.
+  function dropSwatchPixels(pixels, box, opts) {
+    opts = opts || {};
+    const bridge = opts.bridge != null ? opts.bridge : 4;
+    const minFrac = opts.minFrac != null ? opts.minFrac : 0.15;
+    if (pixels.length < 2) return pixels;
+    const comps = connectedComponents(pixels, { bridge: bridge });
+    if (!comps.length) return pixels;
+    const biggest = comps[0].length, thresh = minFrac * biggest;
+    const keep = [];
+    for (let c = 0; c < comps.length; c++) if (comps[c].length >= thresh) for (let k = 0; k < comps[c].length; k++) keep.push(comps[c][k]);
+    return keep;
   }
 
   function columnBands(ys) {
@@ -216,10 +337,13 @@
 
   function extractCurves(clusters, box, opts) {
     opts = opts || {};
+    const dropSwatch = opts.dropSwatch !== false;
     return clusters.map(function (c) {
+      // jette les swatches de legende / petites composantes isolees de meme couleur
+      const pixels = dropSwatch ? dropSwatchPixels(c.pixels, box) : c.pixels;
       const byCol = {};
-      for (let k = 0; k < c.pixels.length; k++) {
-        const p = c.pixels[k];
+      for (let k = 0; k < pixels.length; k++) {
+        const p = pixels[k];
         (byCol[p.x] = byCol[p.x] || []).push(p.y);
       }
       const xs = Object.keys(byCol).map(Number).sort(function (a, b) { return a - b; });
@@ -252,8 +376,8 @@
       }
       return {
         color: c.color,
-        style: detectLineStyle(c.pixels, box).style,
-        pixels: c.pixels,
+        style: detectLineStyle(pixels, box).style,
+        pixels: pixels,
         points: points,
         ambiguous: merged
       };
@@ -333,7 +457,10 @@
     opts = opts || {};
     const tol = opts.tol != null ? opts.tol : 70;
     const connected = opts.connected !== false;
-    const bridge = opts.bridge != null ? opts.bridge : 8;
+    // pont assez large pour TRAVERSER un croisement (une autre courbe epaisse
+    // peut couvrir ~15-20 px du trait) sans pour autant atteindre un swatch de
+    // legende (a des dizaines de px du trait, donc toujours ecarte).
+    const bridge = opts.bridge != null ? opts.bridge : 20;
     const i0 = (sy * img.width + sx) * 4;
     const cr = img.data[i0], cg = img.data[i0 + 1], cb = img.data[i0 + 2];
     function match(x, y) {
@@ -443,7 +570,169 @@
     return { color: color, points: points, style: detectLineStyle(masked, box).style };
   }
 
-  const DASH_FOR = { solid: "solid", dashed: "dash", dotted: "dot", markers: "solid" };
+  // ----- Brosse-guide -----
+  // Le trace de la brosse n'est PAS un masque plat mais un CHEMIN-GUIDE : une
+  // trajectoire approximative que l'utilisateur dessine sur le trait. On s'en sert
+  // de prior : a chaque colonne on snappe sur les pixels colores du couloir (largeur
+  // = brosse) les plus proches du guide, et un centroide sous-pixel pondere par
+  // l'intensite (proximite couleur) affine le y. Le guide tranche les croisements
+  // (on suit la branche que la main a longee), et l'utilisateur n'a PAS besoin d'etre
+  // parfait : la precision vient des pixels, pas du geste.
+  function colorDist(r, g, b, c) { return Math.abs(r - c[0]) + Math.abs(g - c[1]) + Math.abs(b - c[2]); }
+
+  function buildGuide(stroke) {
+    const byx = {};
+    for (let i = 0; i < stroke.length; i++) {
+      const s = stroke[i];
+      (byx[s.x] = byx[s.x] || []).push(s.y);
+    }
+    const xs = Object.keys(byx).map(Number).sort(function (a, b) { return a - b; });
+    const ys = xs.map(function (x) { const a = byx[x]; let s = 0; for (let i = 0; i < a.length; i++) s += a[i]; return s / a.length; });
+    return { xs: xs, ys: ys };
+  }
+  function guideAt(guide, x) {
+    const xs = guide.xs, ys = guide.ys;
+    if (!xs.length) return null;
+    if (x <= xs[0]) return ys[0];
+    if (x >= xs[xs.length - 1]) return ys[ys.length - 1];
+    for (let i = 1; i < xs.length; i++) {
+      if (x <= xs[i]) {
+        const t = (xs[i] - xs[i - 1]) ? (x - xs[i - 1]) / (xs[i] - xs[i - 1]) : 0;
+        return ys[i - 1] + t * (ys[i] - ys[i - 1]);
+      }
+    }
+    return ys[ys.length - 1];
+  }
+
+  function traceGuided(img, box, stroke, opts) {
+    opts = opts || {};
+    const bg = opts.bg || detectBackground(img, box);
+    const bgDist = opts.bgDist != null ? opts.bgDist : 50;
+    const brush = opts.brush != null ? opts.brush : 12;
+    const colorTol = opts.colorTol != null ? opts.colorTol : 120;
+    if (!stroke || !stroke.length) return { color: [0, 0, 0], points: [], style: "solid" };
+    const guide = buildGuide(stroke);
+    const x0 = Math.max(box.x0 + 1, guide.xs[0]);
+    const x1 = Math.min(box.x1 - 1, guide.xs[guide.xs.length - 1]);
+
+    // 1) couleur cible : pixels avant-plan du couloir, bucket dominant
+    const buckets = {};
+    for (let x = x0; x <= x1; x++) {
+      const gy = guideAt(guide, x); if (gy == null) continue;
+      const ylo = Math.max(box.y0 + 1, Math.floor(gy - brush)), yhi = Math.min(box.y1 - 1, Math.ceil(gy + brush));
+      for (let y = ylo; y <= yhi; y++) {
+        const i = (y * img.width + x) * 4, r = img.data[i], g = img.data[i + 1], b = img.data[i + 2];
+        if (colorDist(r, g, b, [bg.r, bg.g, bg.b]) < bgDist) continue;
+        const key = (r >> 4) + "_" + (g >> 4) + "_" + (b >> 4);
+        const c = buckets[key] || (buckets[key] = { n: 0, r: 0, g: 0, b: 0 });
+        c.n++; c.r += r; c.g += g; c.b += b;
+      }
+    }
+    let bestK = null, bestN = -1;
+    for (const k in buckets) if (buckets[k].n > bestN) { bestN = buckets[k].n; bestK = k; }
+    if (!bestK) return { color: [0, 0, 0], points: [], style: "solid" };
+    const dd = buckets[bestK];
+    const color = [Math.round(dd.r / dd.n), Math.round(dd.g / dd.n), Math.round(dd.b / dd.n)];
+
+    // 2) par colonne : bande la plus proche du guide -> centroide sous-pixel pondere
+    const points = [], masked = [];
+    for (let x = x0; x <= x1; x++) {
+      const gy = guideAt(guide, x); if (gy == null) continue;
+      const ylo = Math.max(box.y0 + 1, Math.floor(gy - brush)), yhi = Math.min(box.y1 - 1, Math.ceil(gy + brush));
+      const hits = [];
+      for (let y = ylo; y <= yhi; y++) {
+        const i = (y * img.width + x) * 4, dist = colorDist(img.data[i], img.data[i + 1], img.data[i + 2], color);
+        if (dist > colorTol) continue;
+        hits.push({ y: y, w: Math.max(1e-4, 1 - dist / (colorTol + 1)) });
+      }
+      if (!hits.length) continue;
+      // bandes = pixels consecutifs en y
+      const bands = []; let cur = [hits[0]];
+      for (let k = 1; k < hits.length; k++) {
+        if (hits[k].y - hits[k - 1].y <= 1) cur.push(hits[k]);
+        else { bands.push(cur); cur = [hits[k]]; }
+      }
+      bands.push(cur);
+      // bande dont le centroide brut est le plus proche du guide
+      let chosen = bands[0], bd = Infinity;
+      for (let bI = 0; bI < bands.length; bI++) {
+        let sy = 0; for (let k = 0; k < bands[bI].length; k++) sy += bands[bI][k].y;
+        const cen = sy / bands[bI].length, gd = Math.abs(cen - gy);
+        if (gd < bd) { bd = gd; chosen = bands[bI]; }
+      }
+      // centroide sous-pixel : poids couleur * proximite au guide. La proximite
+      // evite, a un CROISEMENT (les deux branches fusionnent en une seule bande
+      // haute), que le centroide bascule vers le milieu : il reste sur la branche
+      // longee.
+      const sig = Math.max(2, brush / 3);
+      let sw = 0, swy = 0;
+      for (let k = 0; k < chosen.length; k++) {
+        const dgy = (chosen[k].y - gy) / sig;
+        const w = chosen[k].w / (1 + dgy * dgy);
+        sw += w; swy += w * chosen[k].y; masked.push({ x: x, y: chosen[k].y });
+      }
+      points.push({ xpx: x, ypx: swy / sw });
+    }
+    return { color: color, points: points, style: detectLineStyle(masked, box).style };
+  }
+
+  // Lisse le jitter pixel (effet escalier) par moyenne glissante centree sur ypx,
+  // sans deplacer les xpx. Fenetre impaire ; bords retrecis automatiquement.
+  function smoothPoints(points, opts) {
+    opts = opts || {};
+    const win = Math.max(1, opts.window != null ? opts.window : 21);
+    const half = win >> 1;
+    const n = points.length;
+    if (n < 3 || win < 3) return points.slice();
+    const out = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const lo = Math.max(0, i - half), hi = Math.min(n - 1, i + half);
+      let s = 0; for (let k = lo; k <= hi; k++) s += points[k].ypx;
+      out[i] = { xpx: points[i].xpx, ypx: s / (hi - lo + 1) };
+    }
+    return out;
+  }
+
+  // Savitzky-Golay (regression quadratique locale, espacement uniforme suppose).
+  // Lisse autant qu'une moyenne mais PRESERVE LES PICS (un parabole est reproduit
+  // exactement). Fenetre impaire ; bords en fenetre asymetrique (le fit reste exact
+  // pour un polynome de degre <= 2).
+  function savgolSmooth(points, opts) {
+    opts = opts || {};
+    const win = Math.max(3, opts.window != null ? opts.window : 21);
+    const half = win >> 1, n = points.length;
+    if (n < 3) return points.slice();
+    const out = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const lo = Math.max(0, i - half), hi = Math.min(n - 1, i + half);
+      let S0 = 0, S1 = 0, S2 = 0, S3 = 0, S4 = 0, T0 = 0, T1 = 0, T2 = 0;
+      for (let k = lo; k <= hi; k++) {
+        const u = k - i, u2 = u * u, y = points[k].ypx;
+        S0 += 1; S1 += u; S2 += u2; S3 += u2 * u; S4 += u2 * u2;
+        T0 += y; T1 += u * y; T2 += u2 * y;
+      }
+      // resout [[S0,S1,S2],[S1,S2,S3],[S2,S3,S4]]*[a,b,c]=[T0,T1,T2], valeur en u=0 = a
+      const det = S0 * (S2 * S4 - S3 * S3) - S1 * (S1 * S4 - S3 * S2) + S2 * (S1 * S3 - S2 * S2);
+      let a;
+      if (Math.abs(det) < 1e-9) a = T0 / S0;
+      else a = (T0 * (S2 * S4 - S3 * S3) - S1 * (T1 * S4 - S3 * T2) + S2 * (T1 * S3 - S2 * T2)) / det;
+      out[i] = { xpx: points[i].xpx, ypx: a };
+    }
+    return out;
+  }
+
+  // Reduit a ~maxPoints en echantillonnant uniformement, bords conserves.
+  function decimate(points, opts) {
+    opts = opts || {};
+    const maxP = Math.max(2, opts.maxPoints != null ? opts.maxPoints : 250);
+    const n = points.length;
+    if (n <= maxP) return points.slice();
+    const step = (n - 1) / (maxP - 1), out = [];
+    for (let i = 0; i < maxP; i++) out.push(points[Math.round(i * step)]);
+    return out;
+  }
+
+  const DASH_FOR = { solid: "solid", dashed: "dash", dotted: "dot", dashdot: "dashdot", markers: "solid" };
   function rgbCss(c) { return "rgb(" + c[0] + "," + c[1] + "," + c[2] + ")"; }
 
   function buildSpec(curves, box, calib, title) {
@@ -489,13 +778,21 @@
     pixelsToData: pixelsToData,
     detectBackground: detectBackground,
     detectPlotBox: detectPlotBox,
+    removeGridPixels: removeGridPixels,
+    connectedComponents: connectedComponents,
+    dropSwatchPixels: dropSwatchPixels,
     clusterCurveColors: clusterCurveColors,
     detectLineStyle: detectLineStyle,
+    bridgeGaps: bridgeGaps,
     extractCurves: extractCurves,
     traceFromSeeds: traceFromSeeds,
     colorMaskAt: colorMaskAt,
     mapPoints: mapPoints,
+    smoothPoints: smoothPoints,
+    savgolSmooth: savgolSmooth,
+    decimate: decimate,
     traceRegion: traceRegion,
+    traceGuided: traceGuided,
     buildSpec: buildSpec,
     buildSpecMapped: buildSpecMapped
   };

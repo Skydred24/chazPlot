@@ -256,6 +256,174 @@ check("traceRegion : couleur dominante dans la zone + mediane par colonne", func
   assert.ok(c.points.every(function (p) { return Math.abs(p.ypx - 40) <= 2; }), "suit le vert (y=40), ignore le magenta");
 });
 
+// --- Brique 1 : brosse-guide (traceGuided) ---
+
+check("traceGuided : suit le guide a travers un croisement meme couleur", function () {
+  const img = makeImage(120, 100);
+  const c = [0, 0, 0];
+  drawSeg(img, 20, 30, 100, 80, c); // A : monte en y pixel
+  drawSeg(img, 20, 80, 100, 30, c); // B : descend en y pixel (croise A au centre)
+  const box = { x0: 10, y0: 10, x1: 110, y1: 90 };
+  // guide grossier le long de A (pas forcement parfait)
+  const stroke = [];
+  for (let x = 20; x <= 100; x += 8) stroke.push({ x: x, y: Math.round(30 + (80 - 30) * (x - 20) / 80) });
+  const g = CD.traceGuided(img, box, stroke, { brush: 10, bg: { r: 255, g: 255, b: 255 } });
+  assert.ok(g.points.length > 30, "des points (" + g.points.length + ")");
+  const first = g.points[0], last = g.points[g.points.length - 1];
+  assert.ok(last.ypx > first.ypx, "suit A (y pixel croit), pas B");
+  // a droite : proche de A(100)=80, loin de B(100)=30
+  assert.ok(Math.abs(last.ypx - 80) < Math.abs(last.ypx - 30), "fin sur la branche A");
+});
+
+check("traceGuided : centroide sous-pixel pondere par l'intensite", function () {
+  const img = makeImage(60, 60);
+  const box = { x0: 0, y0: 0, x1: 59, y1: 59 };
+  // coeur noir (lignes 39,40) + halo gris (ligne 41, poids plus faible)
+  for (let x = 10; x < 50; x++) { setPx(img, x, 39, [0, 0, 0]); setPx(img, x, 40, [0, 0, 0]); setPx(img, x, 41, [128, 128, 128]); }
+  const stroke = []; for (let x = 10; x < 50; x += 5) stroke.push({ x: x, y: 40 });
+  const g = CD.traceGuided(img, box, stroke, { brush: 6, bg: { r: 255, g: 255, b: 255 }, colorTol: 500 });
+  assert.ok(g.points.length > 20, "des points");
+  const mid = g.points[Math.floor(g.points.length / 2)].ypx;
+  // coeur en 39.5 ; non pondere ce serait 40 ; pondere tire vers le coeur
+  assert.ok(mid > 39.5 && mid < 40, "sous-pixel tire vers le coeur (obtenu " + mid + ")");
+});
+
+check("traceGuided : guide decale snappe sur la vraie courbe", function () {
+  const img = makeImage(80, 80);
+  const box = { x0: 0, y0: 0, x1: 79, y1: 79 };
+  for (let x = 10; x < 70; x++) setPx(img, x, 40, [200, 0, 0]); // courbe rouge y=40
+  // guide volontairement decale de +6 px (dans le couloir brush=12)
+  const stroke = []; for (let x = 10; x < 70; x += 6) stroke.push({ x: x, y: 46 });
+  const g = CD.traceGuided(img, box, stroke, { brush: 12, bg: { r: 255, g: 255, b: 255 } });
+  assert.ok(g.points.length > 30, "des points");
+  assert.ok(g.points.every(function (p) { return Math.abs(p.ypx - 40) <= 1.5; }), "snap sur y=40 malgre guide a 46");
+});
+
+// --- Brique 2 : style robuste + pontage des trous ---
+
+check("detectLineStyle : tiret-point (dashdot) distingue de dashed", function () {
+  const box = { x0: 0, y0: 0, x1: 100, y1: 50 };
+  const px = [];
+  // motif periode 10 : tiret de 5 (0..4), trou (5,6), point (7), trou (8,9)
+  for (let x = 0; x < 100; x++) if ((x % 10) < 5 || (x % 10) === 7) px.push({ x: x, y: 25 });
+  assert.strictEqual(CD.detectLineStyle(px, box).style, "dashdot");
+});
+
+check("bridgeGaps : comble les trous de tirets par interpolation lineaire", function () {
+  const pts = [{ xpx: 0, ypx: 10 }, { xpx: 1, ypx: 11 }, { xpx: 2, ypx: 12 }, { xpx: 7, ypx: 17 }, { xpx: 8, ypx: 18 }, { xpx: 9, ypx: 19 }];
+  const out = CD.bridgeGaps(pts, { maxGap: 6 });
+  assert.strictEqual(out.length, 10, "toutes les colonnes 0..9");
+  const at5 = out.filter(function (p) { return p.xpx === 5; })[0];
+  assert.ok(at5 && Math.abs(at5.ypx - 15) < 1e-6, "interpolation a x=5 -> 15");
+});
+
+check("bridgeGaps : laisse intact un trou plus grand que maxGap", function () {
+  const pts = [{ xpx: 0, ypx: 0 }, { xpx: 1, ypx: 1 }, { xpx: 20, ypx: 20 }];
+  const out = CD.bridgeGaps(pts, { maxGap: 5 });
+  assert.strictEqual(out.length, 3, "grand trou non comble");
+});
+
+check("buildSpec : style dashdot reporte en dash plotly", function () {
+  const box = { x0: 0, y0: 0, x1: 100, y1: 100 };
+  const calib = { xmin: 0, xmax: 10, ymin: 0, ymax: 10, xlog: false, ylog: false };
+  const spec = CD.buildSpec([{ color: [0, 0, 0], style: "dashdot", points: [{ xpx: 0, ypx: 0 }, { xpx: 100, ypx: 100 }] }], box, calib, "");
+  assert.strictEqual(spec.plotly.data[0].line.dash, "dashdot");
+});
+
+check("detectLineStyle : trait EPAIS avec petits trous reste une ligne (pas markers)", function () {
+  const box = { x0: 0, y0: 0, x1: 200, y1: 50 };
+  const px = [];
+  // trait epais (hauteur 5) couvrant 0..199 mais avec des petits trous (plages 6, trous 2)
+  for (let x = 0; x < 200; x++) if ((x % 8) < 6) for (let dy = 0; dy < 5; dy++) px.push({ x: x, y: 22 + dy });
+  const st = CD.detectLineStyle(px, box).style;
+  assert.notStrictEqual(st, "markers", "trait epais troue ne doit pas devenir markers (obtenu " + st + ")");
+});
+
+check("detectLineStyle : vrais marqueurs (clairsemes, plus de trou que d'encre)", function () {
+  const box = { x0: 0, y0: 0, x1: 200, y1: 50 };
+  const px = [];
+  // pastilles de 4 px tous les 25 px (gros trous) -> vrais markers
+  for (let x = 0; x < 200; x++) if ((x % 25) < 4) for (let dy = 0; dy < 5; dy++) px.push({ x: x, y: 22 + dy });
+  assert.strictEqual(CD.detectLineStyle(px, box).style, "markers");
+});
+
+check("dropSwatchPixels : retire une petite composante isolee (swatch legende)", function () {
+  const px = [];
+  for (let x = 0; x < 200; x++) px.push({ x: x, y: 50 + Math.round(x * 0.1) }); // courbe ~200 px continue
+  for (let x = 0; x < 20; x++) px.push({ x: x, y: 120 });                        // swatch 20 px, isole loin en y
+  const out = CD.dropSwatchPixels(px, { x0: 0, y0: 0, x1: 200, y1: 140 });
+  assert.ok(out.length >= 195 && out.length <= 205, "courbe gardee (" + out.length + ")");
+  assert.ok(out.every(function (p) { return p.y !== 120; }), "swatch retire");
+});
+
+check("dropSwatchPixels : ne casse pas une courbe en tirets", function () {
+  const px = [];
+  for (let x = 0; x < 200; x++) if ((x % 20) < 12) px.push({ x: x, y: 50 }); // tirets 12 on / 8 off
+  const before = px.length;
+  const out = CD.dropSwatchPixels(px, { x0: 0, y0: 0, x1: 200, y1: 60 }, { bridge: 4 });
+  assert.ok(out.length >= before * 0.9, "dashes conserves (" + out.length + "/" + before + ")");
+});
+
+check("smoothPoints : lisse le jitter, garde la forme et les bords", function () {
+  const pts = [];
+  for (let x = 0; x <= 100; x++) pts.push({ xpx: x, ypx: 50 + (x % 2 === 0 ? 1 : -1) }); // dents de scie +-1
+  const out = CD.smoothPoints(pts, { window: 5 });
+  assert.strictEqual(out.length, pts.length, "meme nombre de points");
+  // au milieu, le jitter +-1 doit etre fortement attenue
+  const mid = out[50].ypx;
+  assert.ok(Math.abs(mid - 50) < 0.4, "jitter attenue (obtenu " + mid + ")");
+  // bords preserves (xpx inchanges)
+  assert.strictEqual(out[0].xpx, 0);
+  assert.strictEqual(out[100].xpx, 100);
+});
+
+check("savgolSmooth : preserve un pic quadratique", function () {
+  const pts = []; for (let x = 0; x <= 100; x++) pts.push({ xpx: x, ypx: 100 - 0.04 * (x - 50) * (x - 50) });
+  const out = CD.savgolSmooth(pts, { window: 11 });
+  assert.ok(Math.abs(out[50].ypx - 100) < 0.2, "pic preserve (" + out[50].ypx + ")");
+});
+
+check("savgolSmooth : attenue le jitter", function () {
+  const pts = []; for (let x = 0; x <= 100; x++) pts.push({ xpx: x, ypx: 50 + (x % 2 ? 1 : -1) });
+  const out = CD.savgolSmooth(pts, { window: 11 });
+  assert.ok(Math.abs(out[50].ypx - 50) < 0.3, "jitter attenue (" + out[50].ypx + ")");
+});
+
+check("decimate : reduit en gardant les bords", function () {
+  const pts = []; for (let x = 0; x < 1000; x++) pts.push({ xpx: x, ypx: x });
+  const out = CD.decimate(pts, { maxPoints: 100 });
+  assert.strictEqual(out.length, 100);
+  assert.strictEqual(out[0].xpx, 0);
+  assert.strictEqual(out[99].xpx, 999);
+});
+
+// --- Brique 3 : anti-grille (lignes droites pleine etendue) ---
+
+check("removeGridPixels : enleve une ligne pleine largeur, garde la diagonale", function () {
+  const box = { x0: 0, y0: 0, x1: 100, y1: 80 };
+  const px = [];
+  for (let x = 0; x <= 100; x++) px.push({ x: x, y: 40 });               // grille horizontale
+  for (let x = 0; x <= 100; x++) px.push({ x: x, y: Math.round(10 + x * 0.5) }); // courbe
+  const out = CD.removeGridPixels(px, box);
+  assert.ok(out.filter(function (p) { return p.y === 40; }).length <= 1, "ligne y=40 retiree");
+  assert.ok(out.length >= 95 && out.length <= 105, "diagonale conservee (" + out.length + ")");
+});
+
+check("clusterCurveColors : grille grise foncee pleine largeur ecartee", function () {
+  const img = makeImage(200, 140);
+  const box = { x0: 10, y0: 10, x1: 190, y1: 130 };
+  drawVLine(img, 10, 10, 130, [0, 0, 0]); drawVLine(img, 190, 10, 130, [0, 0, 0]);
+  drawHLine(img, 10, 10, 190, [0, 0, 0]); drawHLine(img, 130, 10, 190, [0, 0, 0]);
+  drawHLine(img, 70, 11, 189, [97, 97, 97]);     // grille grise foncee (bucket sombre)
+  drawSeg(img, 20, 110, 180, 30, [0, 150, 0]);   // vraie courbe verte
+  const clusters = CD.clusterCurveColors(img, box);
+  assert.ok(clusters.some(function (c) { return c.color[1] > 100 && c.color[0] < 80; }), "courbe verte detectee");
+  assert.ok(!clusters.some(function (c) {
+    const mx = Math.max(c.color[0], c.color[1], c.color[2]), mn = Math.min(c.color[0], c.color[1], c.color[2]);
+    return (mx - mn) < 20 && mx > 40 && mx < 140;
+  }), "aucun cluster gris (grille retiree)");
+});
+
 // exporter les helpers pour les taches suivantes du meme fichier
 module.exports = { makeImage: makeImage, setPx: setPx, drawHLine: drawHLine, drawVLine: drawVLine, drawSeg: drawSeg };
 
