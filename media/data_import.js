@@ -154,6 +154,8 @@
 
   api.parseDelimited = parseDelimited;
   api.seriesFromColumns = seriesFromColumns;
+  api.splitLine = splitLine;
+  api.toNumber = toNumber;
 
   if (typeof module !== "undefined" && module.exports) { module.exports = api; }
   if (typeof self !== "undefined") { self.DataImport = api; }

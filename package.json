@@ -124,8 +124,8 @@
         },
         "chazPlots.refreshIdenticalReruns": {
           "type": "boolean",
-          "default": true,
-          "description": "Quand un script est relancé sans changement, rafraîchir les cartes identiques au lieu d'empiler des doublons (comparaison par signature du rendu : même script+ligne ET même contenu). Dès qu'un paramètre change le rendu, une NOUVELLE carte apparaît (l'ancienne est conservée pour comparer/superposer). Désactivez pour toujours empiler. Note : un plot non déterministe (np.random sans seed) donne un rendu différent à chaque run → il s'empilera."
+          "default": false,
+          "description": "Opt-in : quand un script est relance sans changement, rafraichir les cartes identiques au lieu d'empiler des doublons (comparaison par signature du rendu : meme script+ligne ET meme contenu). OFF par defaut pour toujours empiler les reruns."
         },
         "chazPlots.replaceOnSameProvenance": {
           "type": "boolean",

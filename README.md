@@ -60,7 +60,10 @@ lecteur intégré, et tout est **persisté** d'une session à l'autre.
   `chazPlots.customPlotStyles`.
 - **Import CSV / DAT** : glissez un `.csv`, `.dat` ou `.txt` sur une figure pour
   superposer des mesures, ou sur la zone vide pour creer un nouveau graphe. Le
-  bouton **Importer CSV** ouvre le meme assistant de mapping X/Y sans glisser-deposer.
+  bouton **Importer CSV** accepte plusieurs fichiers et ouvre le meme assistant
+  de mapping X/Y sans glisser-deposer. Les gros fichiers (>= 50 Mo) passent en
+  mode apercu + lecture par blocs : Chaz Plots parcourt le fichier complet mais
+  ne garde qu'un echantillon borne pour preserver l'interactivite.
 - **Image -> graphe + code matplotlib** : les PNG/SVG exportes embarquent leurs
   donnees Plotly ; redeposez l'image dans Chaz Plots (ou bouton « Image -> graphe
   + code ») pour **retracer la figure** dans le panneau *et* obtenir le script
@@ -193,10 +196,12 @@ Ouvrez le dossier dans VS Code et appuyez sur `F5` (« Run Extension »).
 - `chazPlots.includeMp4` (defaut `false`) - pre-encoder un MP4 (ffmpeg
   + libx264). ATTENTION : bloque plt.show() plusieurs secondes par animation
   ; n'activez que si ffmpeg est installe.
+- `chazPlots.refreshIdenticalReruns` (defaut `false`) - opt-in : rafraichit une
+  carte seulement si le rerun produit exactement le meme rendu (meme provenance
+  + meme contenu). OFF pour toujours empiler les reruns.
 - `chazPlots.replaceOnSameProvenance` (defaut `false`) - opt-in : remplace la
-  carte en place quand le rerun produit la meme figure (meme
-  script + meme ligne + meme titre). OFF pour preserver les etudes
-  paramétriques en boucle.
+  carte en place quand le rerun vient du meme script, de la meme ligne et du
+  meme titre. OFF pour preserver les etudes parametriques en boucle.
 - `chazPlots.persistFigures` (défaut `true`) — conserver les figures entre
   sessions. Désactivez pour un mode ultra rapide sans écriture disque.
 - `chazPlots.autoReveal` (défaut `true`) — afficher le panneau à chaque figure.

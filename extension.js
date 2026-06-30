@@ -259,8 +259,8 @@ function addFigure(data) {
   // (meme script+ligne ET meme rendu) est re-emise, on rafraichit la carte au
   // lieu d'empiler -> pas de 40 doublons quand on relance un script inchange.
   // Des qu'un parametre change le rendu, la signature differe -> nouvelle carte
-  // (on garde l'ancienne pour comparer). Defaut ON.
-  if (cfg.get("refreshIdenticalReruns", true)) {
+  // (on garde l'ancienne pour comparer). Defaut OFF : les reruns s'empilent.
+  if (cfg.get("refreshIdenticalReruns", false)) {
     const dup = ReplacePolicy.findDedupTarget(figures, incoming);
     if (dup) {
       dup.ts = new Date().toLocaleTimeString();
@@ -425,12 +425,19 @@ function readDataFile(requestId, uriString, target) {
   let fsPath;
   try { fsPath = vscode.Uri.parse(uriString).fsPath; }
   catch (e) { fsPath = String(uriString); }
-  fs.readFile(fsPath, "utf8", function (err, text) {
-    if (err) {
-      postToWebview({ type: "dataFileContent", requestId: requestId, error: String((err && err.message) || err) });
+  fs.stat(fsPath, function (statErr, stat) {
+    if (!statErr && stat && stat.size >= 50 * 1024 * 1024) {
+      postToWebview({ type: "dataFileContent", requestId: requestId,
+        error: "fichier trop volumineux via glisser depuis VS Code ; utilisez le bouton Importer CSV/DAT pour l'import streaming" });
       return;
     }
-    postToWebview({ type: "dataFileContent", requestId: requestId, text: text, name: path.basename(fsPath), target: target });
+    fs.readFile(fsPath, "utf8", function (err, text) {
+      if (err) {
+        postToWebview({ type: "dataFileContent", requestId: requestId, error: String((err && err.message) || err) });
+        return;
+      }
+      postToWebview({ type: "dataFileContent", requestId: requestId, text: text, name: path.basename(fsPath), target: target });
+    });
   });
 }
 

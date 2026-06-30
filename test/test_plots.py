@@ -385,3 +385,32 @@ fig.canvas.manager.set_window_title("demo_subplots_cote_a_cote")
 # Envoi au panneau d'extension
 plt.show()
 
+# =====================================================================
+# VERIF MESURES : double axe Y (twinx)
+# Objectif : en mode Outils > Mesures, cliquer sur une courbe de gauche
+# puis une courbe de droite. Le panneau doit afficher les valeurs et les
+# deltas pour les deux echelles Y (axe gauche et axe droit).
+# =====================================================================
+x = np.linspace(0, 12, 240)
+temperature = 20 + 7 * np.sin(x / 1.8) + 0.4 * x
+pression = 95 + 12 * np.cos(x / 2.4) + 2.5 * x
+
+fig_tw, ax_left = plt.subplots(figsize=(7, 4))
+ax_right = ax_left.twinx()
+
+l1, = ax_left.plot(x, temperature, color="#1f77b4", lw=2, label="Temperature")
+l2, = ax_right.plot(x, pression, color="#d62728", lw=2, ls="--", label="Pression")
+
+ax_left.set_xlabel("Temps (s)")
+ax_left.set_ylabel("Temperature (C)", color="#1f77b4")
+ax_right.set_ylabel("Pression (kPa)", color="#d62728")
+ax_left.tick_params(axis="y", labelcolor="#1f77b4")
+ax_right.tick_params(axis="y", labelcolor="#d62728")
+ax_left.grid(True, alpha=0.25)
+ax_left.set_title("Mesures avec double axe Y (twinx)")
+
+lines = [l1, l2]
+ax_left.legend(lines, [line.get_label() for line in lines], loc="upper left")
+fig_tw.tight_layout()
+fig_tw.canvas.manager.set_window_title("mesures_twinx_double_axe")
+plt.show()

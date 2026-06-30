@@ -2461,6 +2461,7 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
   function resetMeasureState(el){
     el._spMeasure = null;
     el._spMeasureIdx = null;
+    el._spMeasureIdxs = null;
     if (el._spReadout){ el._spReadout.style.display = "none"; }
   }
   function setMeasureArmedFeedback(el){
@@ -2487,40 +2488,85 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     }
     setMeasureArmedFeedback(el);
   }
-  function measureTrace(points){
+  function axisValueAtPixel(ax, pixel, horizontal){
+    if (!ax || !ax.range || typeof ax.r2l !== "function" || typeof ax.l2r !== "function"){ return null; }
+    const l0 = ax.r2l(ax.range[0]), l1 = ax.r2l(ax.range[1]);
+    if (!(l1 - l0)){ return null; }
+    const frac = horizontal ? (pixel - ax._offset) / ax._length : 1 - (pixel - ax._offset) / ax._length;
+    return ax.l2r(l0 + frac * (l1 - l0));
+  }
+  function yValuesAtVisualPoint(el, yref, yValue){
+    const out = {};
+    const base = guideAxisById(el, yref || "y");
+    const yPixel = base ? guideValuePixel(base, yValue, false) : null;
+    if (base && yPixel != null){
+      const axes = navAxes(el, "y");
+      axes.forEach(function(entry){
+        const ax = entry.ax;
+        if (!ax || !ax._id){ return; }
+        // Double axe Y / twinx : les deux axes ont le meme domaine pixel.
+        if (Math.abs(ax._offset - base._offset) > 1 || Math.abs(ax._length - base._length) > 1){ return; }
+        const v = axisValueAtPixel(ax, yPixel, false);
+        if (v !== null && isFinite(Number(v))){ out[ax._id] = Number(v); }
+      });
+    }
+    if (out[yref || "y"] === undefined && isFinite(Number(yValue))){ out[yref || "y"] = Number(yValue); }
+    return out;
+  }
+  function axisTitleText(el, ref, kind){
+    const key = axisKeyFromRef(ref || kind, kind);
+    const ax = el && el._fullLayout && el._fullLayout[key];
+    const title = ax && ax.title && (ax.title.text || ax.title);
+    return title ? String(title).replace(/<[^>]+>/g, "") : (ref || kind);
+  }
+  function measureTraceForPoints(points, connect){
+    const first = points[0] || {};
     return {
-      type: "scatter", mode: "lines+markers+text",
+      type: "scatter", mode: (connect && points.length > 1) ? "lines+markers+text" : "markers+text",
       x: points.map(function(p){ return p.rawx; }),
       y: points.map(function(p){ return p.y; }),
-      text: points.map(function(p, i){ return i === 0 ? "A" : "B"; }),
+      text: points.map(function(p){ return p.label; }),
       textposition: "top center",
       textfont: { color: MEASURE_COLOR, size: 12 },
       marker: { size: 10, color: MEASURE_COLOR, symbol: "x-thin", line: { width: 2, color: MEASURE_COLOR } },
       line: { color: MEASURE_COLOR, width: 1, dash: "dot" },
       hoverinfo: "skip", showlegend: false,
-      xaxis: "x", yaxis: "y", _spMeasure: true
+      xaxis: first.xref || "x", yaxis: first.yref || "y", _spMeasure: true
     };
+  }
+  function measureTraces(points){
+    if (!points.length){ return []; }
+    const sameAxes = points.every(function(p){ return (p.xref || "x") === (points[0].xref || "x") && (p.yref || "y") === (points[0].yref || "y"); });
+    if (sameAxes){ return [measureTraceForPoints(points, true)]; }
+    const groups = [];
+    points.forEach(function(p){
+      const xref = p.xref || "x", yref = p.yref || "y";
+      let g = groups.find(function(item){ return item.xref === xref && item.yref === yref; });
+      if (!g){ g = { xref: xref, yref: yref, points: [] }; groups.push(g); }
+      g.points.push(p);
+    });
+    return groups.map(function(g){ return measureTraceForPoints(g.points, false); });
+  }
+  function deleteMeasureTraces(el){
+    const idxs = (el._spMeasureIdxs && el._spMeasureIdxs.length) ? el._spMeasureIdxs.slice() : (el._spMeasureIdx != null ? [el._spMeasureIdx] : []);
+    if (idxs.length){
+      try { Plotly.deleteTraces(el, idxs.sort(function(a, b){ return b - a; })); } catch(e){}
+    }
+    el._spMeasureIdx = null;
+    el._spMeasureIdxs = null;
   }
   function drawMeasure(el){
     const pts = (el._spMeasure && el._spMeasure.points) || [];
-    if (pts.length === 0){
-      if (el._spMeasureIdx != null){ try { Plotly.deleteTraces(el, el._spMeasureIdx); } catch(e){} el._spMeasureIdx = null; }
-      return;
-    }
-    const tr = measureTrace(pts);
-    if (el._spMeasureIdx == null){
-      // la trace de mesure occupe toujours la derniere position ; on fixe
-      // l'index de facon synchrone pour eviter une course entre deux clics.
-      el._spMeasureIdx = el.data.length;
-      Plotly.addTraces(el, tr);
-    } else {
-      Plotly.restyle(el, { x: [tr.x], y: [tr.y], text: [tr.text] }, [el._spMeasureIdx]);
-    }
+    deleteMeasureTraces(el);
+    if (pts.length === 0){ return; }
+    const traces = measureTraces(pts);
+    el._spMeasureIdxs = traces.map(function(_, i){ return el.data.length + i; });
+    el._spMeasureIdx = el._spMeasureIdxs.length === 1 ? el._spMeasureIdxs[0] : null;
+    Plotly.addTraces(el, traces);
   }
   function clearMeasure(el){
-    if (el._spMeasureIdx != null){ try { Plotly.deleteTraces(el, el._spMeasureIdx); } catch(e){} }
+    deleteMeasureTraces(el);
     el._spMeasure = null;
-    el._spMeasureIdx = null;
     setMeasureArmedFeedback(el);
   }
   function curveXY(el, cn){
@@ -2532,8 +2578,12 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     if (!pt || (pt.data && pt.data._spMeasure)){ return; }  // ignore un clic sur le marqueur
     let pts = (el._spMeasure && el._spMeasure.points) || [];
     if (pts.length >= 2){ pts = []; }   // un 3e clic repart d'un nouveau A
-    pts = pts.concat([{ rawx: pt.x, x: toNum(pt.x), y: Number(pt.y), cn: pt.curveNumber,
-                        name: (pt.data && pt.data.name) || null }]);
+    const xref = traceAxisRef(pt.data || {}, "x");
+    const yref = traceAxisRef(pt.data || {}, "y");
+    const y = Number(pt.y);
+    pts = pts.concat([{ rawx: pt.x, x: toNum(pt.x), y: y, yAll: yValuesAtVisualPoint(el, yref, y),
+                        xref: xref, yref: yref, label: pts.length === 0 ? "A" : "B",
+                        cn: pt.curveNumber, name: (pt.data && pt.data.name) || null }]);
     el._spMeasure = { points: pts };
     drawMeasure(el);
     updateMeasureReadout(el);
@@ -2544,16 +2594,33 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     if (pts.length === 0){ setMeasureArmedFeedback(el); return; }
     box.style.display = "block";
     const a = pts[0];
-    let html = "<div class='measure-row'><b>A</b>  x " + fmtNum(a.x) + "   y " + fmtNum(a.y) + "</div>";
+    function pointRow(label, p){
+      const yLabel = axisTitleText(el, p.yref, "y");
+      return "<div class='measure-row'><b>" + label + "</b>  x " + fmtNum(p.x) +
+             "   " + yLabel + " " + fmtNum(p.y) + "</div>";
+    }
+    let html = pointRow("A", a);
     if (pts.length === 1){
+      const refs = Object.keys(a.yAll || {}).filter(function(ref){ return ref !== a.yref; });
+      if (refs.length){
+        html += "<div class='measure-row'>equiv. " + refs.map(function(ref){ return axisTitleText(el, ref, "y") + " " + fmtNum(a.yAll[ref]); }).join("   ") + "</div>";
+      }
       box.innerHTML = html + "<div class='measure-hint'>clique un second point</div>";
       return;
     }
     const b = pts[1];
-    html += "<div class='measure-row'><b>B</b>  x " + fmtNum(b.x) + "   y " + fmtNum(b.y) + "</div>";
-    const m = MeasureMath.segmentMetrics(a.x, a.y, b.x, b.y);
-    html += "<div class='measure-row'>Δx " + fmtNum(m.dx) + "   Δy " + fmtNum(m.dy) +
-            "   pente " + (m.slope == null ? "∞" : fmtNum(m.slope)) + "</div>";
+    html += pointRow("B", b);
+    const aAll = a.yAll || {}, bAll = b.yAll || {};
+    const axisRefs = Object.keys(aAll).filter(function(ref){ return bAll[ref] !== undefined; });
+    if (!axisRefs.length){ axisRefs.push(a.yref || "y"); }
+    axisRefs.forEach(function(ref){
+      const ay = aAll[ref] !== undefined ? aAll[ref] : a.y;
+      const by = bAll[ref] !== undefined ? bAll[ref] : b.y;
+      const m = MeasureMath.segmentMetrics(a.x, ay, b.x, by);
+      const prefix = axisRefs.length > 1 ? (axisTitleText(el, ref, "y") + "  ") : "";
+      html += "<div class='measure-row'>" + prefix + "dx " + fmtNum(m.dx) + "   dy " + fmtNum(m.dy) +
+              "   pente " + (m.slope == null ? "inf" : fmtNum(m.slope)) + "</div>";
+    });
     if (a.cn === b.cn){
       const xy = curveXY(el, a.cn);
       if (xy){
@@ -4432,6 +4499,15 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     if (pt.z !== undefined && pt.z !== null){ s += "   z " + fmtNum(pt.z); }
     return s;
   }
+  function suppressNativeHover(trace){
+    const out = Object.assign({}, trace || {});
+    if (out.hoverinfo !== "skip"){ out.hoverinfo = "none"; }
+    if (out.hovertemplate !== undefined){ out.hovertemplate = null; }
+    return out;
+  }
+  function hasModeFeedback(el){
+    return !!(el && (el._spInsetArmed || el._spLegendEditArmed || el._spAnnotationArmed));
+  }
   const listPlots = [];   // { el, fig } pour le recalcul de hauteur au resize
   // Retour visuel du mode encart arme : contour sur le graphe (marche meme en
   // comparaison ou il n'y a pas de zone de coordonnees) + texte si dispo.
@@ -5000,9 +5076,7 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     // Coordonnees affichees en dehors du graphe : on coupe l'info-bulle
     // flottante sur le graphe et on garde seulement les evenements de survol.
     layout.hovermode = layout.hovermode || "closest";
-    const data = fig.plotly.data.map(function(t){
-      return (t.hoverinfo === undefined) ? Object.assign({}, t, { hoverinfo: "none" }) : t;
-    });
+    const data = (fig.plotly.data || []).map(suppressNativeHover);
     if (fill){
       delete layout.height; layout.autosize = true;
     } else {
@@ -5161,6 +5235,14 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
         const pt = ev && ev.points && ev.points[0];
         if (pt && pt.curveNumber !== undefined){ openLegendEditor(el, pt.curveNumber); }
       });
+      el.on("plotly_hover", function(ev){
+        if (!coordsEl || hasModeFeedback(el)){ return; }
+        const pt = ev && ev.points && ev.points[0];
+        coordsEl.textContent = pt ? hoverText(pt) : "";
+      });
+      el.on("plotly_unhover", function(){
+        if (coordsEl && !hasModeFeedback(el)){ coordsEl.textContent = ""; }
+      });
       // Clic sur la BOITE de legende (fond/cadre, pas une entree) en mode
       // edition -> editeur de la taille generale de la legende.
       el.addEventListener("click", function(ev){
@@ -5172,8 +5254,7 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
         openLegendBoxEditor(el);
       }, true);
     }
-    // (Affichage des coordonnees au survol retire : la zone .coords ne sert plus
-    // qu'aux messages de mode — encart, edition de legende, annotation, auto-Y.)
+    // Coordonnees au survol : affichees dans le bandeau, sans info-bulle native Plotly.
     // Vignettes persistees (encarts colles d'un autre graphe) : les axes/traces/
     // bordure sont deja bakees dans fig.plotly (donc rendues par newPlot). On
     // recharge le registre et on (re)monte les overlays draggables.
@@ -6716,6 +6797,10 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
   // ============================================================
   const dataReadPending = {};   // requestId -> resolve (lecture via l'extension)
   let importChain = Promise.resolve();   // serialise les dialogues entre glissers
+  const LARGE_IMPORT_BYTES = 50 * 1024 * 1024;       // au-dessus : aperçu + streaming
+  const LARGE_IMPORT_PREVIEW_BYTES = 1024 * 1024;    // assez pour noms/colonnes + aperçu
+  const LARGE_IMPORT_CHUNK_BYTES = 4 * 1024 * 1024;
+  const LARGE_IMPORT_MAX_POINTS = 200000;            // par serie tracee
 
   function isFileDrag(e){
     const dt = e.dataTransfer; if (!dt || !dt.types){ return false; }
@@ -6751,7 +6836,31 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     return out;
   }
 
+  function readBlobText(blob){
+    return new Promise(function(resolve){
+      const r = new FileReader();
+      r.onload = function(){ resolve(String(r.result || "")); };
+      r.onerror = function(){ resolve(""); };
+      try { r.readAsText(blob); } catch (e) { resolve(""); }
+    });
+  }
+
+  function completePreviewText(text, fileSize, bytesRead){
+    if (fileSize <= bytesRead){ return text; }
+    const cut = Math.max(text.lastIndexOf("\n"), text.lastIndexOf("\r"));
+    return cut > 0 ? text.slice(0, cut) : text;
+  }
+
+  function readLargeSystemFile(file){
+    const n = Math.min(file.size || 0, LARGE_IMPORT_PREVIEW_BYTES);
+    return readBlobText(file.slice(0, n)).then(function(text){
+      return { name: file.name, text: completePreviewText(text, file.size || 0, n),
+               file: file, large: true, size: file.size || 0, previewBytes: n };
+    });
+  }
+
   function readSystemFile(file){
+    if (file && file.size >= LARGE_IMPORT_BYTES){ return readLargeSystemFile(file); }
     return new Promise(function(resolve){
       const r = new FileReader();
       r.onload = function(){ resolve({ name: file.name, text: String(r.result || "") }); };
@@ -6796,7 +6905,7 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
 
   function importedTrace(s){
     return { type: "scatter", mode: "markers", x: s.x, y: s.y, name: s.name,
-             marker: { size: 6 }, hoverinfo: "none", _spImported: true };
+             marker: { size: 6 }, hoverinfo: "none", hovertemplate: null, _spImported: true };
   }
 
   // Superpose les series importees sur un graphe Plotly DONNE (element DOM).
@@ -6832,7 +6941,7 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
 
   // Cree une nouvelle figure a partir des series importees (depot sur zone vide).
   function applyNewFigure(series, baseName){
-    const data = series.map(importedTrace).map(function(t){ delete t.hoverinfo; return t; });
+    const data = series.map(importedTrace);
     const plotly = {
       data: data,
       layout: { margin: { l: 60, r: 20, t: 30, b: 50 }, xaxis: {}, yaxis: {}, showlegend: data.length > 1 }
@@ -6841,6 +6950,73 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
     vscodeApi.postMessage({ type: "createFigureFromData", title: title, plotly: plotly });
   }
 
+  function decimateInPlace(series, strideMul){
+    series.forEach(function(s){
+      const nx = [], ny = [];
+      for (let i = 0; i < s.x.length; i += strideMul){ nx.push(s.x[i]); ny.push(s.y[i]); }
+      s.x = nx; s.y = ny;
+    });
+  }
+
+  function importLargeSelection(parsed, xIndex, yIndices, baseName){
+    const file = parsed._largeFile;
+    if (!file){ return Promise.resolve([]); }
+    const delim = parsed.delimiter || "ws";
+    const perY = Array.isArray(xIndex);
+    const dataStart = parsed.pairs ? 2 : (parsed.hasHeader ? 1 : 0);
+    const previewRows = Math.max(1, parsed.rowCount || 1);
+    const avgLineBytes = Math.max(8, (parsed._previewBytes || LARGE_IMPORT_PREVIEW_BYTES) / previewRows);
+    const estimatedRows = Math.max(previewRows, Math.floor((parsed._largeSize || file.size || 0) / avgLineBytes));
+    let stride = Math.max(1, Math.ceil(estimatedRows / LARGE_IMPORT_MAX_POINTS));
+    const series = (yIndices || []).map(function(yi, k){
+      const col = parsed.columns[yi];
+      const xi = perY ? xIndex[k] : xIndex;
+      return { x: [], y: [], name: (baseName ? baseName + ": " : "") + (col ? col.name : ("col" + (yi + 1))), xi: xi, yi: yi };
+    });
+    let offset = 0, carry = "", logicalLine = 0, dataRow = 0, rowsSeen = 0;
+
+    function processLine(line){
+      const t = line.trim();
+      if (!t || t.charAt(0) === "#" || t.charAt(0) === "%"){ return; }
+      if (logicalLine++ < dataStart){ return; }
+      const rowIndex = dataRow++;
+      rowsSeen++;
+      if (rowIndex % stride !== 0){ return; }
+      const cells = DataImport.splitLine(line, delim);
+      series.forEach(function(s){
+        const yv = DataImport.toNumber(cells[s.yi], delim);
+        const xv = (s.xi == null || s.xi < 0) ? rowIndex : DataImport.toNumber(cells[s.xi], delim);
+        if (isFinite(xv) && isFinite(yv)){ s.x.push(xv); s.y.push(yv); }
+      });
+      if (series.some(function(s){ return s.x.length > LARGE_IMPORT_MAX_POINTS * 2; })){
+        decimateInPlace(series, 2);
+        stride *= 2;
+      }
+    }
+
+    function pump(){
+      if (offset >= file.size){
+        if (carry){ processLine(carry); }
+        const out = series.map(function(s){ return { x: s.x, y: s.y, name: s.name }; })
+                          .filter(function(s){ return s.x.length; });
+        vscodeApi.postMessage({ type: "notify", level: "info",
+          text: "Chaz Plots : gros CSV importe (" + rowsSeen + " lignes parcourues, max "
+              + LARGE_IMPORT_MAX_POINTS + " points/serie affiches)." });
+        return Promise.resolve(out);
+      }
+      const end = Math.min(file.size, offset + LARGE_IMPORT_CHUNK_BYTES);
+      const blob = file.slice(offset, end);
+      offset = end;
+      return readBlobText(blob).then(function(chunk){
+        const text = carry + chunk;
+        const parts = text.split(/\r\n|\r|\n/);
+        carry = parts.pop() || "";
+        parts.forEach(processLine);
+        return new Promise(function(resolve){ setTimeout(resolve, 0); }).then(pump);
+      });
+    }
+    return pump();
+  }
   // Dialogue de mappage X/Y (auto-rempli, ajustable). Resout quand ferme.
   function openImportDialog(fileName, parsed, target){
     return new Promise(function(resolve){
@@ -6861,7 +7037,8 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
       sub.className = "di-sub";
       sub.textContent = (target === "new" ? "Nouveau graphe"
                           : (target && target.el ? "Superposer sur la comparaison" : "Superposer sur ce graphe"))
-        + " · " + cols.length + " colonne(s), " + parsed.rowCount + " ligne(s)"
+        + " · " + cols.length + " colonne(s), "
+        + (parsed._largeFile ? ("aperçu " + parsed.rowCount + " ligne(s), fichier " + Math.round((parsed._largeSize || 0) / 1024 / 1024) + " Mo") : (parsed.rowCount + " ligne(s)"))
         + (parsed.hasHeader ? "" : " · sans en-tete");
       dlg.appendChild(sub);
 
@@ -7013,16 +7190,28 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
         const xi = pairsMode()
           ? picked.map(function(ch){ return parseInt(ch.rowX.value, 10); })
           : parseInt(xSel.value, 10);
-        const series = DataImport.seriesFromColumns(cols, xi, yIndices, nameInput.value.trim())
-                                 .filter(function(s){ return s.x.length; });
-        if (!series.length){
-          vscodeApi.postMessage({ type: "notify", level: "warn", text: "Chaz Plots : aucune donnee exploitable dans la selection." });
+        function finish(series){
+          series = (series || []).filter(function(s){ return s.x.length; });
+          if (!series.length){
+            vscodeApi.postMessage({ type: "notify", level: "warn", text: "Chaz Plots : aucune donnee exploitable dans la selection." });
+            return;
+          }
+          if (target === "new"){ applyNewFigure(series, nameInput.value.trim()); }
+          else if (target && target.el){ applyOverlayToEl(target.el, series); }
+          else { applyOverlay(target, series); }
+          close();
+        }
+        if (parsed._largeFile){
+          ok.disabled = true; ok.textContent = "Lecture...";
+          importLargeSelection(parsed, xi, yIndices, nameInput.value.trim())
+            .then(finish)
+            .catch(function(err){
+              ok.disabled = false; ok.textContent = "Tracer";
+              vscodeApi.postMessage({ type: "notify", level: "error", text: "Chaz Plots : import volumineux impossible (" + String(err) + ")" });
+            });
           return;
         }
-        if (target === "new"){ applyNewFigure(series, nameInput.value.trim()); }
-        else if (target && target.el){ applyOverlayToEl(target.el, series); }
-        else { applyOverlay(target, series); }
-        close();
+        finish(DataImport.seriesFromColumns(cols, xi, yIndices, nameInput.value.trim()));
       }
       function onKey(ev){
         if (ev.key === "Escape"){ ev.preventDefault(); close(); }
@@ -7051,6 +7240,11 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
         text: "Chaz Plots : " + parsed.error + " (" + (item.name || "fichier") + ")" });
       return Promise.resolve();
     }
+    if (item.large){
+      parsed._largeFile = item.file;
+      parsed._largeSize = item.size || (item.file && item.file.size) || 0;
+      parsed._previewBytes = item.previewBytes || LARGE_IMPORT_PREVIEW_BYTES;
+    }
     return openImportDialog(item.name || "donnees", parsed, target);
   }
 
@@ -7061,14 +7255,13 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
   let importPickTarget = "new";
   function importFileList(files, target){
     if (!files || !files.length){ return; }
-    const promises = [];
-    for (let i = 0; i < files.length; i++){ promises.push(readSystemFile(files[i])); }
     importChain = importChain.then(function(){
-      return Promise.all(promises).then(function(items){
-        let chain = Promise.resolve();
-        items.forEach(function(it){ chain = chain.then(function(){ return importOne(it, target); }); });
-        return chain;
-      });
+      let chain = Promise.resolve();
+      for (let i = 0; i < files.length; i++){
+        const file = files[i];
+        chain = chain.then(function(){ return readSystemFile(file).then(function(it){ return importOne(it, target); }); });
+      }
+      return chain;
     }).catch(function(){});
   }
   function ensureImportInput(){
@@ -7208,9 +7401,10 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
       if (files.length){ digOpenFiles(files); }
     }, 80);
   }
-  function queueCsvImport(promise, target){
+  function queueCsvImport(job, target){
     importChain = importChain.then(function(){
-      return Promise.resolve(promise).then(function(it){ return importOne(it, target); });
+      const p = (typeof job === "function") ? job() : job;
+      return Promise.resolve(p).then(function(it){ return importOne(it, target); });
     }).catch(function(){});
   }
 
@@ -7231,7 +7425,7 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
           // image auto-portee -> superpose sur la figure cible (ou nouvelle figure
           // sur le vide), + code en arriere-plan ; sans donnees -> digitalisation.
           routeSystemImage(f, { target: target, digitizeFallback: true });
-        } else { queueCsvImport(readSystemFile(f), target); }         // csv/dat/txt -> overlay/nouveau
+        } else { queueCsvImport(function(){ return readSystemFile(f); }, target); }         // csv/dat/txt -> overlay/nouveau
       }
       return;
     }
@@ -7240,7 +7434,7 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
         const rid = "img" + (++imageReqSeq);
         pendingImage[rid] = { file: null, target: target, digitize: false };
         vscodeApi.postMessage({ type: "importImageUri", uri: u, requestId: rid });
-      } else { queueCsvImport(readVscodeUri(u), target); }
+      } else { queueCsvImport(function(){ return readVscodeUri(u); }, target); }
     });
   });
 
@@ -7408,10 +7602,27 @@ window.CHazPlotsCustomStyles = {{customPlotStylesJson}};
       if (card){
         const plotEl = card.querySelector(".plotwrap > div");
         if (plotEl && msg.fig.plotly){
-          const layout = Object.assign({}, msg.fig.plotly.layout || {}, { uirevision: "persisted" });
+          const layout = clone(msg.fig.plotly.layout || {});
+          layout.uirevision = "persisted";
+          delete layout.width;
+          if (!msg.fig.plotly._spBoard){ stretchHorizontalDomains(layout); }
+          normalizeLayoutTitles(layout);
+          const data = (msg.fig.plotly.data || []).map(suppressNativeHover);
           try {
-            const cfg = plotEl._spConfig || { displaylogo: false };
-            Plotly.react(plotEl, msg.fig.plotly.data || [], layout, cfg);
+            const cfg = plotEl._spConfig || plotlyConfig(msg.fig);
+            const size = applyListPlotSizing(plotEl, msg.fig);
+            layout.width = size.width;
+            layout.height = size.height;
+            layout.autosize = false;
+            plotEl._spFig = msg.fig;
+            plotEl._spBaseData = clone(data);
+            plotEl._spBaseLayout = clone(layout);
+            plotEl._spConfig = cfg;
+            Plotly.react(plotEl, data, layout, cfg).then(function(){
+              if (plotEl._spHasInset){ positionInsetOverlay(plotEl); }
+              positionVignetteOverlays(plotEl);
+              scheduleListResize();
+            }).catch(function(){ scheduleListResize(); });
           } catch (e){
             const parent = card.parentElement;
             if (parent){ parent.replaceChild(makeCard(msg.fig), card); }
